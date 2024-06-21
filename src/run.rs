@@ -1,3 +1,4 @@
+use crate::scanner::scan;
 use anyhow::Result;
 use std::fs;
 use std::io::{self, BufRead};
@@ -5,7 +6,7 @@ use std::io::{self, BufRead};
 /// Run the given data as a rox program.
 fn run(program: impl AsRef<str>) -> Result<()> {
     let program = program.as_ref();
-    for token in crate::scanner::scan_tokens(program)? {
+    for token in scan(program)? {
         println!("{}", token.highlight_in_line(program));
     }
     Ok(())

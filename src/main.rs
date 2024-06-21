@@ -1,5 +1,6 @@
 mod run;
 mod scanner;
+mod util;
 
 use anyhow::Result;
 
