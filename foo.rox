@@ -1,3 +1,7 @@
 // foo.rox
 1 < 2;
 print 1 != 2 / 3;
+print "a
+very
+long
+string"

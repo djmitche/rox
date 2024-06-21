@@ -2,11 +2,11 @@
 use anyhow::Result;
 use nom::{
     branch::alt,
-    bytes::complete::tag,
-    character::complete::{alpha1, alphanumeric1, multispace0},
+    bytes::complete::{is_not, tag},
+    character::complete::{alpha1, alphanumeric1, digit1, multispace0},
     combinator::{all_consuming, map_res, not, recognize, value},
-    multi::{many0, separated_list0},
-    sequence::{pair, preceded, terminated},
+    multi::{many0, many0_count, separated_list0},
+    sequence::{pair, preceded, terminated, tuple},
     Finish, IResult,
 };
 use unicode_width::UnicodeWidthStr;
@@ -33,9 +33,9 @@ pub enum TokenType {
     GreaterEqual,
     Less,
     LessEqual,
-    Identifier, // TODO
-    String,     // TODO
-    Number,     // TODO
+    Identifier,
+    String,
+    Number,
     And,
     Class,
     Else,
@@ -96,6 +96,16 @@ impl<'p> Token<'p> {
     }
 }
 
+/// Either whitespace or an EOL comment.
+fn space_or_comment(i: &str) -> IResult<&str, &str> {
+    recognize(tuple((
+        // Zero or more space + comment..
+        many0(preceded(multispace0, tuple((multispace0, tag("//"), many0(is_not("\n")))))),
+        // Followed by zero or more spaces.
+        multispace0,
+    )))(i)
+}
+
 /// A piece of punctuation, which can be squished right up against other tokens.
 fn punctuation(literal: &'static str, ty: TokenType) -> impl FnMut(&str) -> IResult<&str, Token> {
     move |i| {
@@ -110,6 +120,27 @@ fn keyword(literal: &'static str, ty: TokenType) -> impl FnMut(&str) -> IResult<
         let (i, val) = recognize(pair(tag(literal), not(alphanumeric1)))(i)?;
         Ok((i, Token { ty, val }))
     }
+}
+
+pub fn identifier(i: &str) -> IResult<&str, Token> {
+    let ty = TokenType::Identifier;
+    let (i, val) = recognize(pair(
+        alt((alpha1, tag("_"))),
+        many0(alt((alphanumeric1, tag("_")))),
+    ))(i)?;
+    Ok((i, Token { ty, val }))
+}
+
+fn string(i: &str) -> IResult<&str, Token> {
+    let ty = TokenType::String;
+    let (i, val) = recognize(tuple((tag("\""), many0(is_not("\"")), tag("\""))))(i)?;
+    Ok((i, Token { ty, val }))
+}
+
+fn number(i: &str) -> IResult<&str, Token> {
+    let ty = TokenType::Number;
+    let (i, val) = recognize(alt((recognize(tuple((digit1, tag("."), digit1))), digit1)))(i)?;
+    Ok((i, Token { ty, val }))
 }
 
 fn token(i: &str) -> IResult<&str, Token> {
@@ -155,6 +186,9 @@ fn token(i: &str) -> IResult<&str, Token> {
             keyword("var", Var),
             keyword("while", While),
         )),
+        number,
+        identifier,
+        string,
     ))(i)
 }
 
@@ -162,8 +196,11 @@ fn token(i: &str) -> IResult<&str, Token> {
 pub fn scan(program: &str) -> Result<Vec<Token>> {
     // Get the sequence of tokens, with whitespace allowed at the beginning and end and between
     // each token.
-    match all_consuming(terminated(many0(preceded(multispace0, token)), multispace0))(program)
-        .finish()
+    match all_consuming(terminated(
+        many0(preceded(space_or_comment, token)),
+        space_or_comment,
+    ))(program)
+    .finish()
     {
         Ok((_, tokens)) => Ok(tokens),
         // Anyhow errors don't wrap nom errors very well..
@@ -282,10 +319,18 @@ mod test {
 
     #[test]
     fn keywords_mushed_together() {
-        assert!(&scan("andand").is_err());
-
-        let exp = vec![(And, "and"), (And, "and")];
-        assert_eq!(to_strings(&scan("and and").unwrap()), exp);
+        assert_eq!(
+            to_strings(&scan("andand").unwrap()),
+            vec![(Identifier, "andand")]
+        );
+        assert_eq!(
+            to_strings(&scan("varif").unwrap()),
+            vec![(Identifier, "varif")]
+        );
+        assert_eq!(
+            to_strings(&scan("and and").unwrap()),
+            vec![(And, "and"), (And, "and")]
+        );
     }
 
     #[test]
@@ -293,5 +338,70 @@ mod test {
         let exp = vec![(LeftParen, "("), (And, "and"), (RightBrace, "}")];
         assert_eq!(to_strings(&scan("(and}").unwrap()), exp);
         assert_eq!(to_strings(&scan("( and }").unwrap()), exp);
+    }
+
+    #[test]
+    fn numbers() {
+        assert_eq!(to_strings(&scan("1.2").unwrap()), vec![(Number, "1.2")]);
+        assert_eq!(to_strings(&scan("12.34").unwrap()), vec![(Number, "12.34")]);
+        assert_eq!(to_strings(&scan("1").unwrap()), vec![(Number, "1")]);
+    }
+
+    #[test]
+    fn comments() {
+        assert_eq!(to_strings(&scan("if // 123").unwrap()), vec![(If, "if")]);
+    }
+
+    #[test]
+    fn invalid_numbers() {
+        // Maybe these should be an error, but let's just tokenize them as we find them.
+        assert_eq!(
+            to_strings(&scan(".1").unwrap()),
+            vec![(Dot, "."), (Number, "1")]
+        );
+        assert_eq!(
+            to_strings(&scan(".12").unwrap()),
+            vec![(Dot, "."), (Number, "12")]
+        );
+        assert_eq!(
+            to_strings(&scan("1.").unwrap()),
+            vec![(Number, "1"), (Dot, ".")]
+        );
+        assert_eq!(
+            to_strings(&scan("12.").unwrap()),
+            vec![(Number, "12"), (Dot, ".")]
+        );
+    }
+
+    #[test]
+    fn identifiers() {
+        for ident in ["foo", "_foo", "foo_", "foo_bar", "foo123", "_123", "__"] {
+            assert_eq!(to_strings(&scan(ident).unwrap()), vec![(Identifier, ident)]);
+        }
+    }
+
+    #[test]
+    fn strings() {
+        assert_eq!(
+            to_strings(&scan(r#""foo""#).unwrap()),
+            vec![(String, r#""foo""#)]
+        );
+        assert_eq!(to_strings(&scan(r#""""#).unwrap()), vec![(String, r#""""#)]);
+        assert_eq!(
+            to_strings(&scan(r#""123""#).unwrap()),
+            vec![(String, r#""123""#)]
+        );
+        assert_eq!(
+            to_strings(&scan(r#""if""#).unwrap()),
+            vec![(String, r#""if""#)]
+        );
+        assert_eq!(
+            to_strings(&scan(r#""foo bar""#).unwrap()),
+            vec![(String, r#""foo bar""#)]
+        );
+        assert_eq!(
+            to_strings(&scan("\"foo\nbar\"").unwrap()),
+            vec![(String, "\"foo\nbar\"")]
+        );
     }
 }
