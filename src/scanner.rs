@@ -1,11 +1,10 @@
-#![allow(dead_code, unused_imports)]
 use anyhow::Result;
 use nom::{
     branch::alt,
     bytes::complete::{is_not, tag},
     character::complete::{alpha1, alphanumeric1, digit1, multispace0},
-    combinator::{all_consuming, map_res, not, recognize, value},
-    multi::{many0, many0_count, separated_list0},
+    combinator::{all_consuming, not, recognize},
+    multi::many0,
     sequence::{pair, preceded, terminated, tuple},
     Finish, IResult,
 };
@@ -52,23 +51,18 @@ pub enum TokenType {
     True,
     Var,
     While,
-    Eof,
 }
 
 /// A token in the input stream.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Token<'p> {
     /// Type of the token
-    ty: TokenType,
+    pub ty: TokenType,
     /// String representing this token. This should be a slice of the original program.
-    val: &'p str,
+    pub val: &'p str,
 }
 
 impl<'p> Token<'p> {
-    pub fn new(ty: TokenType, val: &'p str) -> Self {
-        Token { ty, val }
-    }
-
     /// Return a two-line string highlighting this token in the line that contains it, preceded by
     /// a line number.
     // TODO: doesn't handle multi-line tokens
@@ -96,11 +90,18 @@ impl<'p> Token<'p> {
     }
 }
 
+pub type Tokens<'p> = Vec<Token<'p>>;
+
+// -- Lexer Implementation
+
 /// Either whitespace or an EOL comment.
 fn space_or_comment(i: &str) -> IResult<&str, &str> {
     recognize(tuple((
         // Zero or more space + comment..
-        many0(preceded(multispace0, tuple((multispace0, tag("//"), many0(is_not("\n")))))),
+        many0(preceded(
+            multispace0,
+            tuple((multispace0, tag("//"), many0(is_not("\n")))),
+        )),
         // Followed by zero or more spaces.
         multispace0,
     )))(i)
@@ -193,7 +194,7 @@ fn token(i: &str) -> IResult<&str, Token> {
 }
 
 /// Scan the given input into a sequence of tokens.
-pub fn scan(program: &str) -> Result<Vec<Token>> {
+pub fn scan(program: &str) -> Result<Tokens> {
     // Get the sequence of tokens, with whitespace allowed at the beginning and end and between
     // each token.
     match all_consuming(terminated(
@@ -213,20 +214,26 @@ mod test {
     use super::*;
     use TokenType::*;
 
-    fn to_strings<'p>(tokens: &[Token<'p>]) -> Vec<(TokenType, &'p str)> {
+    /// Convert Tokens into tuples of type and string slice. This allows easier assertions in
+    /// tests, instead of comparing against `Token` values, which include offsets in the program.
+    ///
+    /// The cost is that assertions don't completely cover those offsets. For example, in `a + a`,
+    /// the first and last tokens are represented as `(Identifier, "a")`, and the assertion would
+    /// pass even if both are slices of the first occurrence of `a` in the program.
+    fn to_strings<'p>(tokens: Tokens<'p>) -> Vec<(TokenType, &'p str)> {
         tokens.into_iter().map(|t| (t.ty, t.val)).collect()
     }
 
     #[test]
     fn parens_and_whitespace() {
         let exp = vec![(LeftParen, "("), (RightParen, ")")];
-        assert_eq!(to_strings(&scan("()").unwrap()), exp);
-        assert_eq!(to_strings(&scan("( )").unwrap()), exp);
-        assert_eq!(to_strings(&scan(" ()").unwrap()), exp);
-        assert_eq!(to_strings(&scan("() ").unwrap()), exp);
-        assert_eq!(to_strings(&scan(" ( )").unwrap()), exp);
-        assert_eq!(to_strings(&scan(" () ").unwrap()), exp);
-        assert_eq!(to_strings(&scan(" ( ) ").unwrap()), exp);
+        assert_eq!(to_strings(scan("()").unwrap()), exp);
+        assert_eq!(to_strings(scan("( )").unwrap()), exp);
+        assert_eq!(to_strings(scan(" ()").unwrap()), exp);
+        assert_eq!(to_strings(scan("() ").unwrap()), exp);
+        assert_eq!(to_strings(scan(" ( )").unwrap()), exp);
+        assert_eq!(to_strings(scan(" () ").unwrap()), exp);
+        assert_eq!(to_strings(scan(" ( ) ").unwrap()), exp);
     }
 
     #[test]
@@ -252,9 +259,9 @@ mod test {
             (Less, "<"),
             (LessEqual, "<="),
         ];
-        assert_eq!(to_strings(&scan("(){},.-+;/*!!====>>=<<=").unwrap()), exp);
+        assert_eq!(to_strings(scan("(){},.-+;/*!!====>>=<<=").unwrap()), exp);
         assert_eq!(
-            to_strings(&scan("( ) { } , . - + ; / * ! != == = > >= < <=").unwrap()),
+            to_strings(scan("( ) { } , . - + ; / * ! != == = > >= < <=").unwrap()),
             exp
         );
     }
@@ -264,15 +271,15 @@ mod test {
         // This is a choice, but we choose to parse multiple `=` characters preferentially as `==`
         // with an odd number ending with `=`.
         assert_eq!(
-            to_strings(&scan("===").unwrap()),
+            to_strings(scan("===").unwrap()),
             vec![(EqualEqual, "=="), (Equal, "=")]
         );
         assert_eq!(
-            to_strings(&scan("====").unwrap()),
+            to_strings(scan("====").unwrap()),
             vec![(EqualEqual, "=="), (EqualEqual, "==")]
         );
         assert_eq!(
-            to_strings(&scan("=====").unwrap()),
+            to_strings(scan("=====").unwrap()),
             vec![(EqualEqual, "=="), (EqualEqual, "=="), (Equal, "=")]
         );
     }
@@ -280,10 +287,10 @@ mod test {
     #[test]
     fn keywords_and_whitespace() {
         let exp = vec![(And, "and")];
-        assert_eq!(to_strings(&scan("and").unwrap()), exp);
-        assert_eq!(to_strings(&scan(" and").unwrap()), exp);
-        assert_eq!(to_strings(&scan("and ").unwrap()), exp);
-        assert_eq!(to_strings(&scan(" and ").unwrap()), exp);
+        assert_eq!(to_strings(scan("and").unwrap()), exp);
+        assert_eq!(to_strings(scan(" and").unwrap()), exp);
+        assert_eq!(to_strings(scan("and ").unwrap()), exp);
+        assert_eq!(to_strings(scan(" and ").unwrap()), exp);
     }
 
     #[test]
@@ -308,7 +315,7 @@ mod test {
         ];
         assert_eq!(
             to_strings(
-                &scan(
+                scan(
                     "and class else false fun for if nil or print return super this true var while"
                 )
                 .unwrap()
@@ -320,15 +327,15 @@ mod test {
     #[test]
     fn keywords_mushed_together() {
         assert_eq!(
-            to_strings(&scan("andand").unwrap()),
+            to_strings(scan("andand").unwrap()),
             vec![(Identifier, "andand")]
         );
         assert_eq!(
-            to_strings(&scan("varif").unwrap()),
+            to_strings(scan("varif").unwrap()),
             vec![(Identifier, "varif")]
         );
         assert_eq!(
-            to_strings(&scan("and and").unwrap()),
+            to_strings(scan("and and").unwrap()),
             vec![(And, "and"), (And, "and")]
         );
     }
@@ -336,39 +343,39 @@ mod test {
     #[test]
     fn keywords_and_punctuation() {
         let exp = vec![(LeftParen, "("), (And, "and"), (RightBrace, "}")];
-        assert_eq!(to_strings(&scan("(and}").unwrap()), exp);
-        assert_eq!(to_strings(&scan("( and }").unwrap()), exp);
+        assert_eq!(to_strings(scan("(and}").unwrap()), exp);
+        assert_eq!(to_strings(scan("( and }").unwrap()), exp);
     }
 
     #[test]
     fn numbers() {
-        assert_eq!(to_strings(&scan("1.2").unwrap()), vec![(Number, "1.2")]);
-        assert_eq!(to_strings(&scan("12.34").unwrap()), vec![(Number, "12.34")]);
-        assert_eq!(to_strings(&scan("1").unwrap()), vec![(Number, "1")]);
+        assert_eq!(to_strings(scan("1.2").unwrap()), vec![(Number, "1.2")]);
+        assert_eq!(to_strings(scan("12.34").unwrap()), vec![(Number, "12.34")]);
+        assert_eq!(to_strings(scan("1").unwrap()), vec![(Number, "1")]);
     }
 
     #[test]
     fn comments() {
-        assert_eq!(to_strings(&scan("if // 123").unwrap()), vec![(If, "if")]);
+        assert_eq!(to_strings(scan("if // 123").unwrap()), vec![(If, "if")]);
     }
 
     #[test]
     fn invalid_numbers() {
         // Maybe these should be an error, but let's just tokenize them as we find them.
         assert_eq!(
-            to_strings(&scan(".1").unwrap()),
+            to_strings(scan(".1").unwrap()),
             vec![(Dot, "."), (Number, "1")]
         );
         assert_eq!(
-            to_strings(&scan(".12").unwrap()),
+            to_strings(scan(".12").unwrap()),
             vec![(Dot, "."), (Number, "12")]
         );
         assert_eq!(
-            to_strings(&scan("1.").unwrap()),
+            to_strings(scan("1.").unwrap()),
             vec![(Number, "1"), (Dot, ".")]
         );
         assert_eq!(
-            to_strings(&scan("12.").unwrap()),
+            to_strings(scan("12.").unwrap()),
             vec![(Number, "12"), (Dot, ".")]
         );
     }
@@ -376,31 +383,31 @@ mod test {
     #[test]
     fn identifiers() {
         for ident in ["foo", "_foo", "foo_", "foo_bar", "foo123", "_123", "__"] {
-            assert_eq!(to_strings(&scan(ident).unwrap()), vec![(Identifier, ident)]);
+            assert_eq!(to_strings(scan(ident).unwrap()), vec![(Identifier, ident)]);
         }
     }
 
     #[test]
     fn strings() {
         assert_eq!(
-            to_strings(&scan(r#""foo""#).unwrap()),
+            to_strings(scan(r#""foo""#).unwrap()),
             vec![(String, r#""foo""#)]
         );
-        assert_eq!(to_strings(&scan(r#""""#).unwrap()), vec![(String, r#""""#)]);
+        assert_eq!(to_strings(scan(r#""""#).unwrap()), vec![(String, r#""""#)]);
         assert_eq!(
-            to_strings(&scan(r#""123""#).unwrap()),
+            to_strings(scan(r#""123""#).unwrap()),
             vec![(String, r#""123""#)]
         );
         assert_eq!(
-            to_strings(&scan(r#""if""#).unwrap()),
+            to_strings(scan(r#""if""#).unwrap()),
             vec![(String, r#""if""#)]
         );
         assert_eq!(
-            to_strings(&scan(r#""foo bar""#).unwrap()),
+            to_strings(scan(r#""foo bar""#).unwrap()),
             vec![(String, r#""foo bar""#)]
         );
         assert_eq!(
-            to_strings(&scan("\"foo\nbar\"").unwrap()),
+            to_strings(scan("\"foo\nbar\"").unwrap()),
             vec![(String, "\"foo\nbar\"")]
         );
     }
