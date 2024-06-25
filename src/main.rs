@@ -1,6 +1,8 @@
+mod ast;
+mod parser;
 mod run;
 mod scanner;
-mod parser;
+mod token;
 mod util;
 
 use anyhow::Result;
