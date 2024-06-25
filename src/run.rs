@@ -7,7 +7,7 @@ use std::io::{self, BufRead};
 fn run(program: impl AsRef<str>) -> Result<()> {
     let program = program.as_ref();
     for token in scan(program)? {
-        println!("{}", token.highlight_in_line(program));
+        println!("{:?}", token);
     }
     Ok(())
 }

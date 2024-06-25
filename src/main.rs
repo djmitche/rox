@@ -1,3 +1,4 @@
+mod src;
 mod ast;
 mod parser;
 mod run;
