@@ -113,11 +113,11 @@ impl<'p> Parser<'p> {
 
 fn parse(program: &str) -> Result<Node<Expr>> {
     let tokens = scan(program)?;
-    let (remainder, result) = Parser {
+    let parser = Parser {
         tokens: &tokens[..],
         program,
-    }
-    .parse_term(0)?;
+    };
+    let (remainder, result) = parser.parse_term(0)?;
     if remainder < tokens.len() {
         anyhow::bail!("Extra tokens at end");
     }
