@@ -60,15 +60,15 @@ impl<'p> Parser<'p> {
     fn parse_unary(&self, t: usize) -> Result<(usize, Node<Expr>)> {
         let (ty, src) = match self.tokens.get(t) {
             Some(Token { ty, src }) if [TokenType::Bang, TokenType::Minus].contains(ty) => {
-                (ty, src)
+                (ty, *src)
             }
             _ => return self.parse_primary(t),
         };
         // Parse the unary expression following this operator.
         let (t, inner) = self.parse_unary(t + 1)?;
         let result = match ty {
-            TokenType::Bang => Expr::not(*src, inner),
-            TokenType::Minus => Expr::neg(*src, inner),
+            TokenType::Bang => Expr::not(src + inner.src, inner),
+            TokenType::Minus => Expr::neg(src + inner.src, inner),
             _ => unreachable!(),
         };
         Ok((t, result))
@@ -77,18 +77,16 @@ impl<'p> Parser<'p> {
     fn parse_factor(&self, t: usize) -> Result<(usize, Node<Expr>)> {
         let (mut t, mut value) = self.parse_unary(t)?;
         loop {
-            let (ty, src) = match self.tokens.get(t) {
-                Some(Token { ty, src }) if [TokenType::Star, TokenType::Slash].contains(ty) => {
-                    (ty, src)
-                }
+            let ty = match self.tokens.get(t) {
+                Some(Token { ty, .. }) if [TokenType::Star, TokenType::Slash].contains(ty) => ty,
                 _ => return Ok((t, value)),
             };
             t += 1;
             let rhs;
             (t, rhs) = self.parse_unary(t)?;
             value = match ty {
-                TokenType::Star => Expr::mul(*src, Box::new(value), Box::new(rhs)),
-                TokenType::Slash => Expr::div(*src, Box::new(value), Box::new(rhs)),
+                TokenType::Star => Expr::mul(value.src + rhs.src, Box::new(value), Box::new(rhs)),
+                TokenType::Slash => Expr::div(value.src + rhs.src, Box::new(value), Box::new(rhs)),
                 _ => unreachable!(),
             };
         }
@@ -97,18 +95,16 @@ impl<'p> Parser<'p> {
     fn parse_term(&self, t: usize) -> Result<(usize, Node<Expr>)> {
         let (mut t, mut value) = self.parse_factor(t)?;
         loop {
-            let (ty, src) = match self.tokens.get(t) {
-                Some(Token { ty, src }) if [TokenType::Plus, TokenType::Minus].contains(ty) => {
-                    (ty, src)
-                }
+            let ty = match self.tokens.get(t) {
+                Some(Token { ty, .. }) if [TokenType::Plus, TokenType::Minus].contains(ty) => ty,
                 _ => return Ok((t, value)),
             };
             t += 1;
             let rhs;
             (t, rhs) = self.parse_factor(t)?;
             value = match ty {
-                TokenType::Plus => Expr::add(*src, Box::new(value), Box::new(rhs)),
-                TokenType::Minus => Expr::sub(*src, Box::new(value), Box::new(rhs)),
+                TokenType::Plus => Expr::add(value.src + rhs.src, Box::new(value), Box::new(rhs)),
+                TokenType::Minus => Expr::sub(value.src + rhs.src, Box::new(value), Box::new(rhs)),
                 _ => unreachable!(),
             };
         }
@@ -169,22 +165,18 @@ mod test {
         Ok(())
     }
 
-    // TODO: This and following tests have incorrect spans
     #[test]
     fn not() -> Result<()> {
         assert_eq!(
             parse("!false")?,
-            Expr::not(s(0, 1), Expr::boolean(s(1, 5), false))
+            Expr::not(s(0, 6), Expr::boolean(s(1, 5), false))
         );
         Ok(())
     }
 
     #[test]
     fn neg() -> Result<()> {
-        assert_eq!(
-            parse("-5")?,
-            Expr::neg(s(0, 1), Expr::number(s(1, 1), "5"))
-        );
+        assert_eq!(parse("-5")?, Expr::neg(s(0, 2), Expr::number(s(1, 1), "5")));
         Ok(())
     }
 
@@ -192,10 +184,7 @@ mod test {
     fn double_not() -> Result<()> {
         assert_eq!(
             parse("!!false")?,
-            Expr::not(
-                s(0, 1),
-                Expr::not(s(1, 1), Expr::boolean(s(2, 5), false))
-            )
+            Expr::not(s(0, 7), Expr::not(s(1, 6), Expr::boolean(s(2, 5), false)))
         );
         Ok(())
     }
@@ -211,7 +200,7 @@ mod test {
         assert_eq!(
             parse("1 *2")?,
             Expr::mul(
-                s(2, 1),
+                s(0, 4),
                 Expr::number(s(0, 1), "1"),
                 Expr::number(s(3, 1), "2")
             )
@@ -224,7 +213,7 @@ mod test {
         assert_eq!(
             parse("1 -2")?,
             Expr::sub(
-                s(2, 1),
+                s(0, 4),
                 Expr::number(s(0, 1), "1"),
                 Expr::number(s(3, 1), "2")
             )
@@ -237,7 +226,7 @@ mod test {
         assert_eq!(
             parse("(1 *2)")?,
             Expr::mul(
-                s(3, 1),
+                s(1, 4),
                 Expr::number(s(1, 1), "1"),
                 Expr::number(s(4, 1), "2")
             )
@@ -250,10 +239,10 @@ mod test {
         assert_eq!(
             parse("3*(1 +2)")?,
             Expr::mul(
-                s(1, 1),
+                s(0, 7),
                 Expr::number(s(0, 1), "3"),
                 Expr::add(
-                    s(5, 1),
+                    s(3, 4),
                     Expr::number(s(3, 1), "1"),
                     Expr::number(s(6, 1), "2")
                 )
@@ -267,12 +256,12 @@ mod test {
         assert_eq!(
             parse("3*((1+2)+5)")?,
             Expr::mul(
-                s(1, 1),
+                s(0, 10),
                 Expr::number(s(0, 1), "3"),
                 Expr::add(
-                    s(8, 1),
+                    s(4, 6),
                     Expr::add(
-                        s(5, 1),
+                        s(4, 3),
                         Expr::number(s(4, 1), "1"),
                         Expr::number(s(6, 1), "2")
                     ),
