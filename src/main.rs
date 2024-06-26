@@ -1,8 +1,8 @@
-mod src;
 mod ast;
 mod parser;
 mod run;
 mod scanner;
+mod src;
 mod token;
 mod util;
 

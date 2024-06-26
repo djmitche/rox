@@ -160,7 +160,10 @@ mod test {
     /// pass even if both are slices of the first occurrence of `a` in the program.
     fn scan_result<'p>(program: &'p str) -> Vec<(TokenType, &'p str)> {
         let tokens = scan(program).unwrap();
-        tokens.into_iter().map(|token| (token.ty, token.src_str(program))).collect()
+        tokens
+            .into_iter()
+            .map(|token| (token.ty, token.src_str(program)))
+            .collect()
     }
 
     #[test]
@@ -209,10 +212,7 @@ mod test {
     fn multi_equal() {
         // This is a choice, but we choose to parse multiple `=` characters preferentially as `==`
         // with an odd number ending with `=`.
-        assert_eq!(
-            scan_result("==="),
-            vec![(EqualEqual, "=="), (Equal, "=")]
-        );
+        assert_eq!(scan_result("==="), vec![(EqualEqual, "=="), (Equal, "=")]);
         assert_eq!(
             scan_result("===="),
             vec![(EqualEqual, "=="), (EqualEqual, "==")]
@@ -253,25 +253,18 @@ mod test {
             (While, "while"),
         ];
         assert_eq!(
-            scan_result("and class else false fun for if nil or print return super this true var while"),
+            scan_result(
+                "and class else false fun for if nil or print return super this true var while"
+            ),
             exp
         );
     }
 
     #[test]
     fn keywords_mushed_together() {
-        assert_eq!(
-            scan_result("andand"),
-            vec![(Identifier, "andand")]
-        );
-        assert_eq!(
-            scan_result("varif"),
-            vec![(Identifier, "varif")]
-        );
-        assert_eq!(
-            scan_result("and and"),
-            vec![(And, "and"), (And, "and")]
-        );
+        assert_eq!(scan_result("andand"), vec![(Identifier, "andand")]);
+        assert_eq!(scan_result("varif"), vec![(Identifier, "varif")]);
+        assert_eq!(scan_result("and and"), vec![(And, "and"), (And, "and")]);
     }
 
     #[test]
@@ -296,22 +289,10 @@ mod test {
     #[test]
     fn invalid_numbers() {
         // Maybe these should be an error, but let's just tokenize them as we find them.
-        assert_eq!(
-            scan_result(".1"),
-            vec![(Dot, "."), (Number, "1")]
-        );
-        assert_eq!(
-            scan_result(".12"),
-            vec![(Dot, "."), (Number, "12")]
-        );
-        assert_eq!(
-            scan_result("1."),
-            vec![(Number, "1"), (Dot, ".")]
-        );
-        assert_eq!(
-            scan_result("12."),
-            vec![(Number, "12"), (Dot, ".")]
-        );
+        assert_eq!(scan_result(".1"), vec![(Dot, "."), (Number, "1")]);
+        assert_eq!(scan_result(".12"), vec![(Dot, "."), (Number, "12")]);
+        assert_eq!(scan_result("1."), vec![(Number, "1"), (Dot, ".")]);
+        assert_eq!(scan_result("12."), vec![(Number, "12"), (Dot, ".")]);
     }
 
     #[test]
@@ -323,26 +304,11 @@ mod test {
 
     #[test]
     fn strings() {
-        assert_eq!(
-            scan_result(r#""foo""#),
-            vec![(String, r#""foo""#)]
-        );
+        assert_eq!(scan_result(r#""foo""#), vec![(String, r#""foo""#)]);
         assert_eq!(scan_result(r#""""#), vec![(String, r#""""#)]);
-        assert_eq!(
-            scan_result(r#""123""#),
-            vec![(String, r#""123""#)]
-        );
-        assert_eq!(
-            scan_result(r#""if""#),
-            vec![(String, r#""if""#)]
-        );
-        assert_eq!(
-            scan_result(r#""foo bar""#),
-            vec![(String, r#""foo bar""#)]
-        );
-        assert_eq!(
-            scan_result("\"foo\nbar\""),
-            vec![(String, "\"foo\nbar\"")]
-        );
+        assert_eq!(scan_result(r#""123""#), vec![(String, r#""123""#)]);
+        assert_eq!(scan_result(r#""if""#), vec![(String, r#""if""#)]);
+        assert_eq!(scan_result(r#""foo bar""#), vec![(String, r#""foo bar""#)]);
+        assert_eq!(scan_result("\"foo\nbar\""), vec![(String, "\"foo\nbar\"")]);
     }
 }

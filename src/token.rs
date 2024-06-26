@@ -56,7 +56,7 @@ pub struct Token {
 impl Token {
     /// Fetch the source string for this token, given the program.
     pub fn src_str<'p>(&self, program: &'p str) -> &'p str {
-        &program[self.src.offset..self.src.offset+self.src.len]
+        &program[self.src.offset..self.src.offset + self.src.len]
     }
 }
 

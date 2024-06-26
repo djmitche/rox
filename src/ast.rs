@@ -84,28 +84,44 @@ impl Expr {
         }
     }
 
-    pub fn mul(src: Src, lhs: impl Into<NodeRef<Self>>, rhs: impl Into<NodeRef<Self>>) -> Node<Self> {
+    pub fn mul(
+        src: Src,
+        lhs: impl Into<NodeRef<Self>>,
+        rhs: impl Into<NodeRef<Self>>,
+    ) -> Node<Self> {
         Node {
             inner: Expr::Mul(lhs.into(), rhs.into()),
             src,
         }
     }
 
-    pub fn div(src: Src, lhs: impl Into<NodeRef<Self>>, rhs: impl Into<NodeRef<Self>>) -> Node<Self> {
+    pub fn div(
+        src: Src,
+        lhs: impl Into<NodeRef<Self>>,
+        rhs: impl Into<NodeRef<Self>>,
+    ) -> Node<Self> {
         Node {
             inner: Expr::Div(lhs.into(), rhs.into()),
             src,
         }
     }
 
-    pub fn add(src: Src, lhs: impl Into<NodeRef<Self>>, rhs: impl Into<NodeRef<Self>>) -> Node<Self> {
+    pub fn add(
+        src: Src,
+        lhs: impl Into<NodeRef<Self>>,
+        rhs: impl Into<NodeRef<Self>>,
+    ) -> Node<Self> {
         Node {
             inner: Expr::Add(lhs.into(), rhs.into()),
             src,
         }
     }
 
-    pub fn sub(src: Src, lhs: impl Into<NodeRef<Self>>, rhs: impl Into<NodeRef<Self>>) -> Node<Self> {
+    pub fn sub(
+        src: Src,
+        lhs: impl Into<NodeRef<Self>>,
+        rhs: impl Into<NodeRef<Self>>,
+    ) -> Node<Self> {
         Node {
             inner: Expr::Sub(lhs.into(), rhs.into()),
             src,
