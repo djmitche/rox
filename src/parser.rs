@@ -3,15 +3,6 @@ use crate::ast::{Expr, Node, NodeRef};
 use crate::scanner::scan;
 use crate::token::{Token, TokenType, Tokens};
 use anyhow::Result;
-use nom::{
-    branch::alt,
-    bytes::complete::{is_not, tag, take},
-    character::complete::{alpha1, alphanumeric1, digit1, multispace0},
-    combinator::{all_consuming, map_res, not, recognize, verify},
-    multi::many0,
-    sequence::{pair, preceded, terminated, tuple},
-    Finish, IResult,
-};
 
 struct Parser<'p> {
     program: &'p str,

@@ -2,149 +2,218 @@ use crate::src::Src;
 use crate::token::{Token, TokenType, Tokens};
 use crate::util::str_offset_in;
 use anyhow::Result;
-use nom::{
-    branch::alt,
-    bytes::complete::{is_not, tag},
-    character::complete::{alpha1, alphanumeric1, digit1, multispace0},
-    combinator::{all_consuming, not, recognize},
-    multi::many0,
-    sequence::{pair, preceded, terminated, tuple},
-    Finish, IResult,
-};
 
-/// A token in the input stream, using a string as the src. This is compatible with nom's
-/// parsing of `&str`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct Tok<'p> {
-    /// Type of the token
-    pub ty: TokenType,
-    /// Source for this token, from the input program. For tokens not completely identified by
-    /// `ty`, this is further interpreted during parsing.
-    pub src: &'p str,
+struct Scanner<'p> {
+    program: &'p str,
+    offset: usize,
+    tokens: Tokens,
 }
 
-/// Either whitespace or an EOL comment.
-fn space_or_comment(i: &str) -> IResult<&str, &str> {
-    recognize(tuple((
-        // Zero or more space + comment..
-        many0(preceded(
-            multispace0,
-            tuple((multispace0, tag("//"), many0(is_not("\n")))),
-        )),
-        // Followed by zero or more spaces.
-        multispace0,
-    )))(i)
-}
-
-/// A piece of punctuation, which can be squished right up against other tokens.
-fn punctuation(literal: &'static str, ty: TokenType) -> impl FnMut(&str) -> IResult<&str, Tok> {
-    move |i| {
-        let (i, val) = recognize(tag(literal))(i)?;
-        Ok((i, Tok { ty, src: val }))
+impl<'p> Scanner<'p> {
+    fn new(program: &'p str) -> Self {
+        Scanner {
+            program,
+            offset: 0,
+            tokens: Vec::new(),
+        }
     }
-}
 
-/// A keyword, which must be followed by a non-alpha character.
-fn keyword(literal: &'static str, ty: TokenType) -> impl FnMut(&str) -> IResult<&str, Tok> {
-    move |i| {
-        let (i, val) = recognize(pair(tag(literal), not(alphanumeric1)))(i)?;
-        Ok((i, Tok { ty, src: val }))
+    /// Peek at the next character.
+    fn peek(&self) -> Option<char> {
+        self.program[self.offset..].chars().next()
     }
-}
 
-fn identifier(i: &str) -> IResult<&str, Tok> {
-    let ty = TokenType::Identifier;
-    let (i, val) = recognize(pair(
-        alt((alpha1, tag("_"))),
-        many0(alt((alphanumeric1, tag("_")))),
-    ))(i)?;
-    Ok((i, Tok { ty, src: val }))
-}
+    /// Peek at the character at the given offset from the current point.
+    fn peek_at(&self, offset: usize) -> Option<char> {
+        self.program[self.offset + offset..].chars().next()
+    }
 
-fn string(i: &str) -> IResult<&str, Tok> {
-    let ty = TokenType::String;
-    let (i, val) = recognize(tuple((tag("\""), many0(is_not("\"")), tag("\""))))(i)?;
-    Ok((i, Tok { ty, src: val }))
-}
+    /// Advance the given offset.
+    fn advance(&mut self, len: usize) {
+        self.offset += len;
+    }
 
-fn number(i: &str) -> IResult<&str, Tok> {
-    let ty = TokenType::Number;
-    let (i, val) = recognize(alt((recognize(tuple((digit1, tag("."), digit1))), digit1)))(i)?;
-    Ok((i, Tok { ty, src: val }))
-}
+    /// Advance to the next newline
+    fn advance_over_line(&mut self) {
+        if let Some(len) = self.program[self.offset..].find('\n') {
+            self.offset += len + 1;
+        } else {
+            self.offset = self.program.len();
+        }
+    }
 
-fn token(i: &str) -> IResult<&str, Tok> {
-    use TokenType::*;
-    alt((
-        alt((
-            punctuation("(", LeftParen),
-            punctuation(")", RightParen),
-            punctuation("{", LeftBrace),
-            punctuation("}", RightBrace),
-            punctuation(",", Comma),
-            punctuation(".", Dot),
-            punctuation("-", Minus),
-            punctuation("+", Plus),
-            punctuation(";", Semicolon),
-            punctuation("/", Slash),
-            punctuation("*", Star),
-            // For the remainder, the longer version must come first.
-            punctuation("!=", BangEqual),
-            punctuation("!", Bang),
-            punctuation("==", EqualEqual),
-            punctuation("=", Equal),
-            punctuation(">=", GreaterEqual),
-            punctuation(">", Greater),
-            punctuation("<=", LessEqual),
-            punctuation("<", Less),
-        )),
-        alt((
-            keyword("and", And),
-            keyword("class", Class),
-            keyword("else", Else),
-            keyword("false", False),
-            keyword("fun", Fun),
-            keyword("for", For),
-            keyword("if", If),
-            keyword("nil", Nil),
-            keyword("or", Or),
-            keyword("print", Print),
-            keyword("return", Return),
-            keyword("super", Super),
-            keyword("this", This),
-            keyword("true", True),
-            keyword("var", Var),
-            keyword("while", While),
-        )),
-        number,
-        identifier,
-        string,
-    ))(i)
+    /// If the input is equal to the given keyword, push the corresponding token and advance over
+    /// it.
+    fn match_keyword(&mut self, ty: TokenType, kw: &str) -> bool {
+        if self.program[self.offset..].starts_with(kw) {
+            let next_char = self.program[self.offset + kw.len()..]
+                .chars()
+                .next()
+                .unwrap_or(' ');
+            if !next_char.is_alphanumeric() {
+                self.push_token(ty, kw.len());
+                return true;
+            }
+        }
+        false
+    }
+
+    fn match_number(&mut self) -> Result<()> {
+        // TODO: this should probably consider things like `123abc` invalid, but that is now
+        // treated as Number(123) Identifier(abc).
+        let start_offset = self.offset;
+        let mut seen_dot = false;
+        let mut last_was_dot = false;
+        self.advance(1);
+        while let Some(c) = self.peek() {
+            match c {
+                '0'..='9' => {
+                    last_was_dot = false;
+                    self.advance(1);
+                }
+                '.' => {
+                    if seen_dot {
+                        anyhow::bail!("Number with multiple dots");
+                    }
+                    seen_dot = true;
+                    last_was_dot = true;
+                    self.advance(1);
+                }
+                _ => break,
+            }
+        }
+        if last_was_dot {
+            anyhow::bail!("Number with a trailing dot");
+        }
+        let end_offset = self.offset;
+        self.tokens.push(Token {
+            ty: TokenType::Number,
+            src: Src {
+                offset: start_offset,
+                len: end_offset - start_offset,
+            },
+        });
+        Ok(())
+    }
+
+    fn match_string(&mut self) -> Result<()> {
+        let start_offset = self.offset;
+        let mut terminated = false;
+        self.advance(1);
+        while let Some(c) = self.peek() {
+            self.advance(1);
+            if c == '"' {
+                terminated = true;
+                break;
+            }
+        }
+        if !terminated {
+            anyhow::bail!("Unterminated string");
+        }
+        let end_offset = self.offset;
+        self.tokens.push(Token {
+            ty: TokenType::String,
+            src: Src {
+                offset: start_offset,
+                len: end_offset - start_offset,
+            },
+        });
+        Ok(())
+    }
+
+    fn match_identifier(&mut self) -> Result<()> {
+        let start_offset = self.offset;
+        self.advance(1);
+        while let Some(c) = self.peek() {
+            if !c.is_alphanumeric() && c != '_' {
+                break;
+            }
+            self.advance(1);
+        }
+        let end_offset = self.offset;
+        self.tokens.push(Token {
+            ty: TokenType::Identifier,
+            src: Src {
+                offset: start_offset,
+                len: end_offset - start_offset,
+            },
+        });
+        Ok(())
+    }
+
+    fn push_token(&mut self, ty: TokenType, len: usize) {
+        self.tokens.push(Token {
+            ty,
+            src: Src {
+                offset: self.offset,
+                len,
+            },
+        });
+        self.offset += len;
+    }
+
+    fn scan(mut self) -> Result<Tokens> {
+        use TokenType::*;
+        let mut i = 100; // XXX
+        while let Some(c) = self.peek() {
+            i -= 1;
+            if i == 0 {
+                panic!();
+            }
+            // Note that some of the guard expressions here (`if ..`) modify `self` in their
+            // success condition.
+            match dbg!(c) {
+                ' ' | '\t' | '\n' | '\r' => self.advance(1),
+                '(' => self.push_token(LeftParen, 1),
+                ')' => self.push_token(RightParen, 1),
+                '{' => self.push_token(LeftBrace, 1),
+                '}' => self.push_token(RightBrace, 1),
+                ',' => self.push_token(Comma, 1),
+                '.' => self.push_token(Dot, 1),
+                '-' => self.push_token(Minus, 1),
+                '+' => self.push_token(Plus, 1),
+                ';' => self.push_token(Semicolon, 1),
+                '/' if self.peek_at(1) != Some('/') => self.push_token(Slash, 1),
+                '/' => self.advance_over_line(),
+                '*' => self.push_token(Star, 1),
+                '!' if self.peek_at(1) == Some('=') => self.push_token(BangEqual, 2),
+                '!' => self.push_token(Bang, 1),
+                '=' if self.peek_at(1) == Some('=') => self.push_token(EqualEqual, 2),
+                '=' => self.push_token(Equal, 1),
+                '>' if self.peek_at(1) == Some('=') => self.push_token(GreaterEqual, 2),
+                '>' => self.push_token(Greater, 1),
+                '<' if self.peek_at(1) == Some('=') => self.push_token(LessEqual, 2),
+                '<' => self.push_token(Less, 1),
+                'a' if self.match_keyword(And, "and") => {}
+                'c' if self.match_keyword(Class, "class") => {}
+                'e' if self.match_keyword(Else, "else") => {}
+                'f' if self.match_keyword(False, "false") => {}
+                'f' if self.match_keyword(Fun, "fun") => {}
+                'f' if self.match_keyword(For, "for") => {}
+                'i' if self.match_keyword(If, "if") => {}
+                'n' if self.match_keyword(Nil, "nil") => {}
+                'o' if self.match_keyword(Or, "or") => {}
+                'p' if self.match_keyword(Print, "print") => {}
+                'r' if self.match_keyword(Return, "return") => {}
+                's' if self.match_keyword(Super, "super") => {}
+                't' if self.match_keyword(This, "this") => {}
+                't' if self.match_keyword(True, "true") => {}
+                'v' if self.match_keyword(Var, "var") => {}
+                'w' if self.match_keyword(While, "while") => {}
+                '"' => self.match_string()?,
+                '0'..='9' => self.match_number()?,
+                'a'..='z' | 'A'..='Z' | '_' => self.match_identifier()?,
+                _ => anyhow::bail!("Unexpected character: {c}"),
+            }
+        }
+        return Ok(self.tokens);
+    }
 }
 
 /// Scan the given input into a sequence of tokens.
 pub fn scan(program: &str) -> Result<Tokens> {
-    // Get the sequence of tokens, with whitespace allowed at the beginning and end and between
-    // each token.
-    match all_consuming(terminated(
-        many0(preceded(space_or_comment, token)),
-        space_or_comment,
-    ))(program)
-    .finish()
-    {
-        Ok((_, tokens)) => Ok(tokens
-            .into_iter()
-            .map(|tok| Token {
-                ty: tok.ty,
-                src: Src {
-                    offset: str_offset_in(tok.src, program).expect("Token was not in program"),
-                    len: tok.src.len(),
-                },
-            })
-            .collect()),
-        // Anyhow errors don't wrap nom errors very well..
-        Err(e) => anyhow::bail!("scanner error: {e:?}"),
-    }
+    let scanner = Scanner::new(program);
+    scanner.scan()
 }
 
 #[cfg(test)]
@@ -159,7 +228,7 @@ mod test {
     /// the first and last tokens are represented as `(Identifier, "a")`, and the assertion would
     /// pass even if both are slices of the first occurrence of `a` in the program.
     fn scan_result<'p>(program: &'p str) -> Vec<(TokenType, &'p str)> {
-        let tokens = scan(program).unwrap();
+        let tokens = scan(dbg!(program)).unwrap();
         tokens
             .into_iter()
             .map(|token| (token.ty, token.src_str(program)))
@@ -189,8 +258,8 @@ mod test {
             (Dot, "."),
             (Minus, "-"),
             (Plus, "+"),
-            (Semicolon, ";"),
             (Slash, "/"),
+            (Semicolon, ";"),
             (Star, "*"),
             (Bang, "!"),
             (BangEqual, "!="),
@@ -201,9 +270,9 @@ mod test {
             (Less, "<"),
             (LessEqual, "<="),
         ];
-        assert_eq!(scan_result("(){},.-+;/*!!====>>=<<="), exp);
+        assert_eq!(scan_result("(){},.-+/;*!!====>>=<<="), exp);
         assert_eq!(
-            scan_result("( ) { } , . - + ; / * ! != == = > >= < <="),
+            scan_result("( ) { } , . - + / ; * ! != == = > >= < <="),
             exp
         );
     }
@@ -284,15 +353,20 @@ mod test {
     #[test]
     fn comments() {
         assert_eq!(scan_result("if // 123"), vec![(If, "if")]);
+        assert_eq!(
+            scan_result("if // 123\nelse"),
+            vec![(If, "if"), (Else, "else")]
+        );
     }
 
     #[test]
     fn invalid_numbers() {
+        assert!(scan("1.").is_err());
+        assert!(scan("12.").is_err());
+        assert!(scan("1.2.3").is_err());
         // Maybe these should be an error, but let's just tokenize them as we find them.
         assert_eq!(scan_result(".1"), vec![(Dot, "."), (Number, "1")]);
         assert_eq!(scan_result(".12"), vec![(Dot, "."), (Number, "12")]);
-        assert_eq!(scan_result("1."), vec![(Number, "1"), (Dot, ".")]);
-        assert_eq!(scan_result("12."), vec![(Number, "12"), (Dot, ".")]);
     }
 
     #[test]
