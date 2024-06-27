@@ -1,6 +1,6 @@
 #![allow(unused_imports, dead_code)]
 use crate::ast::{Expr, Node, NodeRef};
-use crate::error::{Error, Result};
+use crate::error::{Error, Errors, MultiResult, Result};
 use crate::scanner::scan;
 use crate::src::Src;
 use crate::token::{Token, TokenType, Tokens};
@@ -8,24 +8,26 @@ use crate::token::{Token, TokenType, Tokens};
 struct Parser<'p> {
     program: &'p str,
     tokens: &'p [Token],
+    errors: Errors,
 }
 
 impl<'p> Parser<'p> {
     // Each parsing function returns (remainder, value) where `remainder` is the remaining token
     // stream.
 
-    fn unexpected_eof<T>(&self) -> Result<T> {
-        Error::syntax(
+    fn unexpected_eof<T>(&mut self) -> MultiResult<T> {
+        self.errors.add(Error::syntax(
             "Unexpected EOF",
             Src {
                 offset: self.program.len(),
                 len: 0,
             },
-        )
+        ));
+        Err(std::mem::take(&mut self.errors))
     }
 
     /// parse a primary (one-token) expression, or a parethesized expression.
-    fn parse_primary(&self, t: usize) -> Result<(usize, Node<Expr>)> {
+    fn parse_primary(&mut self, t: usize) -> MultiResult<(usize, Node<Expr>)> {
         let Some(tok) = self.tokens.get(t) else {
             return self.unexpected_eof();
         };
@@ -42,24 +44,37 @@ impl<'p> Parser<'p> {
                 TokenType::False => Expr::boolean(tok.src, false),
                 TokenType::Nil => Expr::nil(tok.src),
                 TokenType::LeftParen => return self.parse_parenthesized(t + 1),
-                _ => return Error::syntax(format!("Unexpected token {:?}", tok.ty), tok.src),
+                _ => {
+                    self.errors.add(Error::syntax(
+                        format!("Unexpected token {:?}", tok.ty),
+                        tok.src,
+                    ));
+                    // Synchronize by trying the next token
+                    return self.parse_primary(t + 1);
+                }
             },
         ))
     }
 
     /// Parse a parenthesized expression, where `tokens` begins after the opening parenthesis.
-    fn parse_parenthesized(&self, t: usize) -> Result<(usize, Node<Expr>)> {
-        let (t, value) = self.parse_term(t)?;
+    fn parse_parenthesized(&mut self, t: usize) -> MultiResult<(usize, Node<Expr>)> {
+        let (mut t, value) = self.parse_term(t)?;
         let Some(tok) = self.tokens.get(t) else {
             return self.unexpected_eof();
         };
-        if tok.ty != TokenType::RightParen {
-            return Error::syntax(format!("Expected `)`, got {:?}", tok.ty), tok.src);
+        if tok.ty == TokenType::RightParen {
+            t += 1;
+        } else {
+            self.errors.add(Error::syntax(
+                format!("Expected `)`, got {:?}", tok.ty),
+                tok.src,
+            ));
+            // Synchronize by assuming the `)` was present.
         }
-        Ok((t + 1, value))
+        Ok((t, value))
     }
 
-    fn parse_unary(&self, t: usize) -> Result<(usize, Node<Expr>)> {
+    fn parse_unary(&mut self, t: usize) -> MultiResult<(usize, Node<Expr>)> {
         let (ty, src) = match self.tokens.get(t) {
             Some(Token { ty, src }) if [TokenType::Bang, TokenType::Minus].contains(ty) => {
                 (ty, *src)
@@ -76,7 +91,7 @@ impl<'p> Parser<'p> {
         Ok((t, result))
     }
 
-    fn parse_factor(&self, t: usize) -> Result<(usize, Node<Expr>)> {
+    fn parse_factor(&mut self, t: usize) -> MultiResult<(usize, Node<Expr>)> {
         let (mut t, mut value) = self.parse_unary(t)?;
         loop {
             let ty = match self.tokens.get(t) {
@@ -94,7 +109,7 @@ impl<'p> Parser<'p> {
         }
     }
 
-    fn parse_term(&self, t: usize) -> Result<(usize, Node<Expr>)> {
+    fn parse_term(&mut self, t: usize) -> MultiResult<(usize, Node<Expr>)> {
         let (mut t, mut value) = self.parse_factor(t)?;
         loop {
             let ty = match self.tokens.get(t) {
@@ -113,16 +128,23 @@ impl<'p> Parser<'p> {
     }
 }
 
-pub fn parse(program: &str) -> Result<Node<Expr>> {
+pub fn parse(program: &str) -> MultiResult<Node<Expr>> {
     let tokens = scan(program)?;
-    let parser = Parser {
+    let mut parser = Parser {
         tokens: &tokens[..],
         program,
+        errors: Errors::new("parser"),
     };
     let (remainder, result) = parser.parse_term(0)?;
     if remainder < tokens.len() {
         let tok = &tokens[remainder];
-        return Error::syntax(format!("Unexpected token after program: {:?}", tok.ty), tok.src);
+        parser.errors.add(Error::syntax(
+            format!("Unexpected token after program: {:?}", tok.ty),
+            tok.src,
+        ));
+    }
+    if !parser.errors.is_empty() {
+        return Err(parser.errors);
     }
     Ok(result)
 }
@@ -138,38 +160,38 @@ mod test {
     }
 
     #[test]
-    fn ident() -> Result<()> {
+    fn ident() -> MultiResult<()> {
         assert_eq!(parse("abc")?, Expr::variable(s(0, 3), "abc"));
         Ok(())
     }
 
     #[test]
-    fn unconsumed_tokens() -> Result<()> {
+    fn unconsumed_tokens() -> MultiResult<()> {
         assert!(parse("abc def").is_err());
         Ok(())
     }
 
     #[test]
-    fn string() -> Result<()> {
+    fn string() -> MultiResult<()> {
         assert_eq!(parse("\"abc\" ")?, Expr::string(s(0, 5), "abc"));
         Ok(())
     }
 
     #[test]
-    fn number() -> Result<()> {
+    fn number() -> MultiResult<()> {
         assert_eq!(parse(" 1.3")?, Expr::number(s(1, 3), "1.3"));
         Ok(())
     }
 
     #[test]
-    fn bool() -> Result<()> {
+    fn bool() -> MultiResult<()> {
         assert_eq!(parse(" true ")?, Expr::boolean(s(1, 4), true));
         assert_eq!(parse(" false")?, Expr::boolean(s(1, 5), false));
         Ok(())
     }
 
     #[test]
-    fn not() -> Result<()> {
+    fn not() -> MultiResult<()> {
         assert_eq!(
             parse("!false")?,
             Expr::not(s(0, 6), Expr::boolean(s(1, 5), false))
@@ -178,13 +200,13 @@ mod test {
     }
 
     #[test]
-    fn neg() -> Result<()> {
+    fn neg() -> MultiResult<()> {
         assert_eq!(parse("-5")?, Expr::neg(s(0, 2), Expr::number(s(1, 1), "5")));
         Ok(())
     }
 
     #[test]
-    fn double_not() -> Result<()> {
+    fn double_not() -> MultiResult<()> {
         assert_eq!(
             parse("!!false")?,
             Expr::not(s(0, 7), Expr::not(s(1, 6), Expr::boolean(s(2, 5), false)))
@@ -193,13 +215,13 @@ mod test {
     }
 
     #[test]
-    fn nil() -> Result<()> {
+    fn nil() -> MultiResult<()> {
         assert_eq!(parse("nil")?, Expr::nil(s(0, 3)));
         Ok(())
     }
 
     #[test]
-    fn mul() -> Result<()> {
+    fn mul() -> MultiResult<()> {
         assert_eq!(
             parse("1 *2")?,
             Expr::mul(
@@ -212,7 +234,7 @@ mod test {
     }
 
     #[test]
-    fn sub() -> Result<()> {
+    fn sub() -> MultiResult<()> {
         assert_eq!(
             parse("1 -2")?,
             Expr::sub(
@@ -225,7 +247,7 @@ mod test {
     }
 
     #[test]
-    fn unnecessary_parens() -> Result<()> {
+    fn unnecessary_parens() -> MultiResult<()> {
         assert_eq!(
             parse("(1 *2)")?,
             Expr::mul(
@@ -238,7 +260,7 @@ mod test {
     }
 
     #[test]
-    fn parens() -> Result<()> {
+    fn parens() -> MultiResult<()> {
         assert_eq!(
             parse("3*(1 +2)")?,
             Expr::mul(
@@ -255,7 +277,7 @@ mod test {
     }
 
     #[test]
-    fn parens_nested() -> Result<()> {
+    fn parens_nested() -> MultiResult<()> {
         assert_eq!(
             parse("3*((1+2)+5)")?,
             Expr::mul(

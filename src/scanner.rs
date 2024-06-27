@@ -1,4 +1,4 @@
-use crate::error::{Error, Result};
+use crate::error::{Error, Errors, MultiResult};
 use crate::src::Src;
 use crate::token::{Token, TokenType, Tokens};
 
@@ -6,6 +6,7 @@ struct Scanner<'p> {
     program: &'p str,
     offset: usize,
     tokens: Tokens,
+    errors: Errors,
 }
 
 impl<'p> Scanner<'p> {
@@ -14,6 +15,7 @@ impl<'p> Scanner<'p> {
             program,
             offset: 0,
             tokens: Vec::new(),
+            errors: Errors::new("scanner"),
         }
     }
 
@@ -57,7 +59,7 @@ impl<'p> Scanner<'p> {
         false
     }
 
-    fn match_number(&mut self) -> Result<()> {
+    fn match_number(&mut self) -> MultiResult<()> {
         // TODO: this should probably consider things like `123abc` invalid, but that is now
         // treated as Number(123) Identifier(abc).
         let start_offset = self.offset;
@@ -78,27 +80,24 @@ impl<'p> Scanner<'p> {
                 _ => break,
             }
         }
-        if last_was_dot || seen_dots > 1 {
-            return Error::syntax(
-                "Invalid number",
-                Src {
-                    offset: start_offset,
-                    len: self.offset + 1 - start_offset,
-                },
-            );
-        }
         let end_offset = self.offset;
-        self.tokens.push(Token {
-            ty: TokenType::Number,
-            src: Src {
-                offset: start_offset,
-                len: end_offset - start_offset,
-            },
-        });
+        let src = Src {
+            offset: start_offset,
+            len: end_offset - start_offset,
+        };
+        if last_was_dot || seen_dots > 1 {
+            self.errors.add(Error::syntax("Invalid number", src));
+            // Synchronize by ignoring the number.
+        } else {
+            self.tokens.push(Token {
+                ty: TokenType::Number,
+                src,
+            });
+        }
         Ok(())
     }
 
-    fn match_string(&mut self) -> Result<()> {
+    fn match_string(&mut self) -> MultiResult<()> {
         let start_offset = self.offset;
         let mut terminated = false;
         self.advance(1);
@@ -109,24 +108,24 @@ impl<'p> Scanner<'p> {
                 break;
             }
         }
+        let end_offset = self.offset;
+        let src = Src {
+            offset: start_offset,
+            len: end_offset - start_offset,
+        };
         if !terminated {
-            return Error::syntax("Unterminated string", Src {
-                offset: start_offset,
-                len: self.offset - start_offset,
+            self.errors.add(Error::syntax("Unterminated string", src));
+            // Synchronize by ignoring the string.
+        } else {
+            self.tokens.push(Token {
+                ty: TokenType::String,
+                src,
             });
         }
-        let end_offset = self.offset;
-        self.tokens.push(Token {
-            ty: TokenType::String,
-            src: Src {
-                offset: start_offset,
-                len: end_offset - start_offset,
-            },
-        });
         Ok(())
     }
 
-    fn match_identifier(&mut self) -> Result<()> {
+    fn match_identifier(&mut self) -> MultiResult<()> {
         let start_offset = self.offset;
         self.advance(1);
         while let Some(c) = self.peek() {
@@ -157,14 +156,9 @@ impl<'p> Scanner<'p> {
         self.offset += len;
     }
 
-    fn scan(mut self) -> Result<Tokens> {
+    fn scan(mut self) -> MultiResult<Tokens> {
         use TokenType::*;
-        let mut i = 100; // XXX
         while let Some(c) = self.peek() {
-            i -= 1;
-            if i == 0 {
-                panic!();
-            }
             // Note that some of the guard expressions here (`if ..`) modify `self` in their
             // success condition.
             match c {
@@ -208,18 +202,28 @@ impl<'p> Scanner<'p> {
                 '"' => self.match_string()?,
                 '0'..='9' => self.match_number()?,
                 'a'..='z' | 'A'..='Z' | '_' => self.match_identifier()?,
-                _ => return Error::syntax("Unreognized input character `{c:?}`", Src {
-                    offset: self.offset,
-                    len: c.len_utf8(),
-                }),
+                _ => {
+                    let c_len = c.len_utf8();
+                    self.errors.add(Error::syntax(
+                        format!("Unreognized input character {c:?}"),
+                        Src {
+                            offset: self.offset,
+                            len: c_len,
+                        },
+                    ));
+                    self.advance(c_len);
+                }
             }
         }
-        return Ok(self.tokens);
+        if !self.errors.is_empty() {
+            return Err(std::mem::take(&mut self.errors));
+        }
+        Ok(self.tokens)
     }
 }
 
 /// Scan the given input into a sequence of tokens.
-pub fn scan(program: &str) -> Result<Tokens> {
+pub fn scan(program: &str) -> MultiResult<Tokens> {
     let scanner = Scanner::new(program);
     scanner.scan()
 }
