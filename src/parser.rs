@@ -1,8 +1,9 @@
 #![allow(unused_imports, dead_code)]
 use crate::ast::{Expr, Node, NodeRef};
+use crate::error::{Error, Result};
 use crate::scanner::scan;
+use crate::src::Src;
 use crate::token::{Token, TokenType, Tokens};
-use anyhow::Result;
 
 struct Parser<'p> {
     program: &'p str,
@@ -13,10 +14,20 @@ impl<'p> Parser<'p> {
     // Each parsing function returns (remainder, value) where `remainder` is the remaining token
     // stream.
 
+    fn unexpected_eof<T>(&self) -> Result<T> {
+        Error::syntax(
+            "Unexpected EOF",
+            Src {
+                offset: self.program.len(),
+                len: 0,
+            },
+        )
+    }
+
     /// parse a primary (one-token) expression, or a parethesized expression.
     fn parse_primary(&self, t: usize) -> Result<(usize, Node<Expr>)> {
         let Some(tok) = self.tokens.get(t) else {
-            anyhow::bail!("Expected primary, got EOF");
+            return self.unexpected_eof();
         };
         fn strip_quotes(quoted: &str) -> &str {
             &quoted[1..quoted.len() - 1]
@@ -31,7 +42,7 @@ impl<'p> Parser<'p> {
                 TokenType::False => Expr::boolean(tok.src, false),
                 TokenType::Nil => Expr::nil(tok.src),
                 TokenType::LeftParen => return self.parse_parenthesized(t + 1),
-                _ => anyhow::bail!("Expected primary, got {0:?}", tok.ty),
+                _ => return Error::syntax(format!("Unexpected token {:?}", tok.ty), tok.src),
             },
         ))
     }
@@ -39,11 +50,11 @@ impl<'p> Parser<'p> {
     /// Parse a parenthesized expression, where `tokens` begins after the opening parenthesis.
     fn parse_parenthesized(&self, t: usize) -> Result<(usize, Node<Expr>)> {
         let (t, value) = self.parse_term(t)?;
-        let Some(Token { ty, .. }) = self.tokens.get(t) else {
-            anyhow::bail!("Unexpected EOF");
+        let Some(tok) = self.tokens.get(t) else {
+            return self.unexpected_eof();
         };
-        if *ty != TokenType::RightParen {
-            anyhow::bail!("Expected RParen, got {0:?}", ty);
+        if tok.ty != TokenType::RightParen {
+            return Error::syntax(format!("Expected `)`, got {:?}", tok.ty), tok.src);
         }
         Ok((t + 1, value))
     }
@@ -102,7 +113,7 @@ impl<'p> Parser<'p> {
     }
 }
 
-fn parse(program: &str) -> Result<Node<Expr>> {
+pub fn parse(program: &str) -> Result<Node<Expr>> {
     let tokens = scan(program)?;
     let parser = Parser {
         tokens: &tokens[..],
@@ -110,7 +121,8 @@ fn parse(program: &str) -> Result<Node<Expr>> {
     };
     let (remainder, result) = parser.parse_term(0)?;
     if remainder < tokens.len() {
-        anyhow::bail!("Extra tokens at end");
+        let tok = &tokens[remainder];
+        return Error::syntax(format!("Unexpected token after program: {:?}", tok.ty), tok.src);
     }
     Ok(result)
 }

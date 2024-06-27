@@ -1,7 +1,6 @@
+use crate::error::{Error, Result};
 use crate::src::Src;
 use crate::token::{Token, TokenType, Tokens};
-use crate::util::str_offset_in;
-use anyhow::Result;
 
 struct Scanner<'p> {
     program: &'p str,
@@ -62,7 +61,7 @@ impl<'p> Scanner<'p> {
         // TODO: this should probably consider things like `123abc` invalid, but that is now
         // treated as Number(123) Identifier(abc).
         let start_offset = self.offset;
-        let mut seen_dot = false;
+        let mut seen_dots = 0;
         let mut last_was_dot = false;
         self.advance(1);
         while let Some(c) = self.peek() {
@@ -72,18 +71,21 @@ impl<'p> Scanner<'p> {
                     self.advance(1);
                 }
                 '.' => {
-                    if seen_dot {
-                        anyhow::bail!("Number with multiple dots");
-                    }
-                    seen_dot = true;
+                    seen_dots += 1;
                     last_was_dot = true;
                     self.advance(1);
                 }
                 _ => break,
             }
         }
-        if last_was_dot {
-            anyhow::bail!("Number with a trailing dot");
+        if last_was_dot || seen_dots > 1 {
+            return Error::syntax(
+                "Invalid number",
+                Src {
+                    offset: start_offset,
+                    len: self.offset + 1 - start_offset,
+                },
+            );
         }
         let end_offset = self.offset;
         self.tokens.push(Token {
@@ -108,7 +110,10 @@ impl<'p> Scanner<'p> {
             }
         }
         if !terminated {
-            anyhow::bail!("Unterminated string");
+            return Error::syntax("Unterminated string", Src {
+                offset: start_offset,
+                len: self.offset - start_offset,
+            });
         }
         let end_offset = self.offset;
         self.tokens.push(Token {
@@ -162,7 +167,7 @@ impl<'p> Scanner<'p> {
             }
             // Note that some of the guard expressions here (`if ..`) modify `self` in their
             // success condition.
-            match dbg!(c) {
+            match c {
                 ' ' | '\t' | '\n' | '\r' => self.advance(1),
                 '(' => self.push_token(LeftParen, 1),
                 ')' => self.push_token(RightParen, 1),
@@ -203,7 +208,10 @@ impl<'p> Scanner<'p> {
                 '"' => self.match_string()?,
                 '0'..='9' => self.match_number()?,
                 'a'..='z' | 'A'..='Z' | '_' => self.match_identifier()?,
-                _ => anyhow::bail!("Unexpected character: {c}"),
+                _ => return Error::syntax("Unreognized input character `{c:?}`", Src {
+                    offset: self.offset,
+                    len: c.len_utf8(),
+                }),
             }
         }
         return Ok(self.tokens);

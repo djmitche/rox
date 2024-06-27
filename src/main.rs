@@ -1,14 +1,12 @@
 mod ast;
+mod error;
 mod parser;
 mod run;
 mod scanner;
 mod src;
 mod token;
-mod util;
 
 use anyhow::Result;
-
-// TODO: Error handling with line numbers
 
 fn main() -> Result<()> {
     let args: Vec<_> = std::env::args().collect();
