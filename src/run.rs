@@ -1,5 +1,5 @@
-use crate::parser::parse;
 use crate::error::MultiResult;
+use crate::parser::parse;
 use std::fs;
 use std::io::{self, BufRead};
 
