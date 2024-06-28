@@ -1,4 +1,7 @@
 use crate::src::Src;
+use crate::token::TokenType;
+
+// TODO: consider https://crates.io/crates/syntree
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Node<K> {
@@ -6,6 +9,54 @@ pub struct Node<K> {
     /// Source for this node, from the input program. For tokens not completely identified by `ty`,
     /// this is further interpreted during parsing.
     pub src: Src,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum UnaryOp {
+    Not,
+    Neg,
+}
+
+impl TryFrom<TokenType> for UnaryOp {
+    type Error = ();
+    fn try_from(ty: TokenType) -> Result<Self, Self::Error> {
+        Ok(match ty {
+            TokenType::Minus => UnaryOp::Neg,
+            TokenType::Bang => UnaryOp::Not,
+            _ => return Err(()),
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum BinaryOp {
+    Mul,
+    Div,
+    Add,
+    Sub,
+    Less,
+    LessEqual,
+    Equal,
+    GreaterEqual,
+    Greater,
+}
+
+impl TryFrom<TokenType> for BinaryOp {
+    type Error = ();
+    fn try_from(ty: TokenType) -> Result<Self, Self::Error> {
+        Ok(match ty {
+            TokenType::Star => BinaryOp::Mul,
+            TokenType::Slash => BinaryOp::Div,
+            TokenType::Plus => BinaryOp::Add,
+            TokenType::Minus => BinaryOp::Sub,
+            TokenType::Less => BinaryOp::Less,
+            TokenType::LessEqual => BinaryOp::LessEqual,
+            TokenType::EqualEqual => BinaryOp::Equal,
+            TokenType::GreaterEqual => BinaryOp::GreaterEqual,
+            TokenType::Greater => BinaryOp::Greater,
+            _ => return Err(()),
+        })
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -20,18 +71,10 @@ pub enum Expr {
     Boolean(bool),
     /// Nil literal.
     Nil,
-    /// Boolean negation.
-    Not(NodeRef<Expr>),
-    /// Numeric negation.
-    Neg(NodeRef<Expr>),
-    /// Multiplication.
-    Mul(NodeRef<Expr>, NodeRef<Expr>),
-    /// Division.
-    Div(NodeRef<Expr>, NodeRef<Expr>),
-    /// Addition.
-    Add(NodeRef<Expr>, NodeRef<Expr>),
-    /// Subtraction.
-    Sub(NodeRef<Expr>, NodeRef<Expr>),
+    /// A unary operation.
+    Unary(UnaryOp, NodeRef<Expr>),
+    /// A binary operation.
+    Binop(BinaryOp, NodeRef<Expr>, NodeRef<Expr>),
 }
 
 impl Expr {
@@ -70,60 +113,21 @@ impl Expr {
         }
     }
 
-    pub fn not(src: Src, child: impl Into<NodeRef<Self>>) -> Node<Self> {
+    pub fn unary_op(op: UnaryOp, src: Src, child: impl Into<NodeRef<Self>>) -> Node<Self> {
         Node {
-            inner: Expr::Not(child.into()),
+            inner: Expr::Unary(op, child.into()),
             src,
         }
     }
 
-    pub fn neg(src: Src, child: impl Into<NodeRef<Self>>) -> Node<Self> {
-        Node {
-            inner: Expr::Neg(child.into()),
-            src,
-        }
-    }
-
-    pub fn mul(
+    pub fn binary_op(
+        op: BinaryOp,
         src: Src,
         lhs: impl Into<NodeRef<Self>>,
         rhs: impl Into<NodeRef<Self>>,
     ) -> Node<Self> {
         Node {
-            inner: Expr::Mul(lhs.into(), rhs.into()),
-            src,
-        }
-    }
-
-    pub fn div(
-        src: Src,
-        lhs: impl Into<NodeRef<Self>>,
-        rhs: impl Into<NodeRef<Self>>,
-    ) -> Node<Self> {
-        Node {
-            inner: Expr::Div(lhs.into(), rhs.into()),
-            src,
-        }
-    }
-
-    pub fn add(
-        src: Src,
-        lhs: impl Into<NodeRef<Self>>,
-        rhs: impl Into<NodeRef<Self>>,
-    ) -> Node<Self> {
-        Node {
-            inner: Expr::Add(lhs.into(), rhs.into()),
-            src,
-        }
-    }
-
-    pub fn sub(
-        src: Src,
-        lhs: impl Into<NodeRef<Self>>,
-        rhs: impl Into<NodeRef<Self>>,
-    ) -> Node<Self> {
-        Node {
-            inner: Expr::Sub(lhs.into(), rhs.into()),
+            inner: Expr::Binop(op, lhs.into(), rhs.into()),
             src,
         }
     }

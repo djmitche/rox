@@ -1,5 +1,5 @@
 #![allow(unused_imports, dead_code)]
-use crate::ast::{Expr, Node, NodeRef};
+use crate::ast::{BinaryOp, Expr, Node, NodeRef, UnaryOp};
 use crate::error::{Error, Errors, MultiResult, Result};
 use crate::scanner::scan;
 use crate::src::Src;
@@ -12,9 +12,8 @@ struct Parser<'p> {
 }
 
 impl<'p> Parser<'p> {
-    // Each parsing function returns (remainder, value) where `remainder` is the remaining token
-    // stream.
-
+    // Each parsing function returns (remainder, value) where `remainder` is the index of the
+    // remaining token stream.
     fn unexpected_eof<T>(&mut self) -> MultiResult<T> {
         self.errors.add(Error::syntax(
             "Unexpected EOF",
@@ -83,11 +82,7 @@ impl<'p> Parser<'p> {
         };
         // Parse the unary expression following this operator.
         let (t, inner) = self.parse_unary(t + 1)?;
-        let result = match ty {
-            TokenType::Bang => Expr::not(src + inner.src, inner),
-            TokenType::Minus => Expr::neg(src + inner.src, inner),
-            _ => unreachable!(),
-        };
+        let result = Expr::unary_op(UnaryOp::try_from(*ty).unwrap(), src + inner.src, inner);
         Ok((t, result))
     }
 
@@ -101,11 +96,12 @@ impl<'p> Parser<'p> {
             t += 1;
             let rhs;
             (t, rhs) = self.parse_unary(t)?;
-            value = match ty {
-                TokenType::Star => Expr::mul(value.src + rhs.src, Box::new(value), Box::new(rhs)),
-                TokenType::Slash => Expr::div(value.src + rhs.src, Box::new(value), Box::new(rhs)),
-                _ => unreachable!(),
-            };
+            value = Expr::binary_op(
+                BinaryOp::try_from(*ty).unwrap(),
+                value.src + rhs.src,
+                Box::new(value),
+                Box::new(rhs),
+            );
         }
     }
 
@@ -119,11 +115,57 @@ impl<'p> Parser<'p> {
             t += 1;
             let rhs;
             (t, rhs) = self.parse_factor(t)?;
-            value = match ty {
-                TokenType::Plus => Expr::add(value.src + rhs.src, Box::new(value), Box::new(rhs)),
-                TokenType::Minus => Expr::sub(value.src + rhs.src, Box::new(value), Box::new(rhs)),
-                _ => unreachable!(),
+            value = Expr::binary_op(
+                BinaryOp::try_from(*ty).unwrap(),
+                value.src + rhs.src,
+                Box::new(value),
+                Box::new(rhs),
+            );
+        }
+    }
+
+    fn parse_comparison(&mut self, t: usize) -> MultiResult<(usize, Node<Expr>)> {
+        let (mut t, mut value) = self.parse_term(t)?;
+        loop {
+            let types = [
+                TokenType::Less,
+                TokenType::LessEqual,
+                TokenType::GreaterEqual,
+                TokenType::Greater,
+            ];
+            let ty = match self.tokens.get(t) {
+                Some(Token { ty, .. }) if types.contains(ty) => ty,
+                _ => return Ok((t, value)),
             };
+            t += 1;
+            let rhs;
+            (t, rhs) = self.parse_term(t)?;
+            value = Expr::binary_op(
+                BinaryOp::try_from(*ty).unwrap(),
+                value.src + rhs.src,
+                Box::new(value),
+                Box::new(rhs),
+            );
+        }
+    }
+
+    fn parse_equality(&mut self, t: usize) -> MultiResult<(usize, Node<Expr>)> {
+        let (mut t, mut value) = self.parse_comparison(t)?;
+        loop {
+            let types = [TokenType::BangEqual, TokenType::EqualEqual];
+            let ty = match self.tokens.get(t) {
+                Some(Token { ty, .. }) if types.contains(ty) => ty,
+                _ => return Ok((t, value)),
+            };
+            t += 1;
+            let rhs;
+            (t, rhs) = self.parse_comparison(t)?;
+            value = Expr::binary_op(
+                BinaryOp::try_from(*ty).unwrap(),
+                value.src + rhs.src,
+                Box::new(value),
+                Box::new(rhs),
+            );
         }
     }
 }
@@ -135,7 +177,7 @@ pub fn parse(program: &str) -> MultiResult<Node<Expr>> {
         program,
         errors: Errors::new("parser"),
     };
-    let (remainder, result) = parser.parse_term(0)?;
+    let (remainder, result) = parser.parse_equality(0)?;
     if remainder < tokens.len() {
         let tok = &tokens[remainder];
         parser.errors.add(Error::syntax(
@@ -194,14 +236,17 @@ mod test {
     fn not() -> MultiResult<()> {
         assert_eq!(
             parse("!false")?,
-            Expr::not(s(0, 6), Expr::boolean(s(1, 5), false))
+            Expr::unary_op(UnaryOp::Not, s(0, 6), Expr::boolean(s(1, 5), false))
         );
         Ok(())
     }
 
     #[test]
     fn neg() -> MultiResult<()> {
-        assert_eq!(parse("-5")?, Expr::neg(s(0, 2), Expr::number(s(1, 1), "5")));
+        assert_eq!(
+            parse("-5")?,
+            Expr::unary_op(UnaryOp::Neg, s(0, 2), Expr::number(s(1, 1), "5"))
+        );
         Ok(())
     }
 
@@ -209,7 +254,11 @@ mod test {
     fn double_not() -> MultiResult<()> {
         assert_eq!(
             parse("!!false")?,
-            Expr::not(s(0, 7), Expr::not(s(1, 6), Expr::boolean(s(2, 5), false)))
+            Expr::unary_op(
+                UnaryOp::Not,
+                s(0, 7),
+                Expr::unary_op(UnaryOp::Not, s(1, 6), Expr::boolean(s(2, 5), false))
+            )
         );
         Ok(())
     }
@@ -224,7 +273,8 @@ mod test {
     fn mul() -> MultiResult<()> {
         assert_eq!(
             parse("1 *2")?,
-            Expr::mul(
+            Expr::binary_op(
+                BinaryOp::Mul,
                 s(0, 4),
                 Expr::number(s(0, 1), "1"),
                 Expr::number(s(3, 1), "2")
@@ -237,7 +287,8 @@ mod test {
     fn sub() -> MultiResult<()> {
         assert_eq!(
             parse("1 -2")?,
-            Expr::sub(
+            Expr::binary_op(
+                BinaryOp::Sub,
                 s(0, 4),
                 Expr::number(s(0, 1), "1"),
                 Expr::number(s(3, 1), "2")
@@ -250,7 +301,8 @@ mod test {
     fn unnecessary_parens() -> MultiResult<()> {
         assert_eq!(
             parse("(1 *2)")?,
-            Expr::mul(
+            Expr::binary_op(
+                BinaryOp::Mul,
                 s(1, 4),
                 Expr::number(s(1, 1), "1"),
                 Expr::number(s(4, 1), "2")
@@ -263,10 +315,12 @@ mod test {
     fn parens() -> MultiResult<()> {
         assert_eq!(
             parse("3*(1 +2)")?,
-            Expr::mul(
+            Expr::binary_op(
+                BinaryOp::Mul,
                 s(0, 7),
                 Expr::number(s(0, 1), "3"),
-                Expr::add(
+                Expr::binary_op(
+                    BinaryOp::Add,
                     s(3, 4),
                     Expr::number(s(3, 1), "1"),
                     Expr::number(s(6, 1), "2")
@@ -280,18 +334,50 @@ mod test {
     fn parens_nested() -> MultiResult<()> {
         assert_eq!(
             parse("3*((1+2)+5)")?,
-            Expr::mul(
+            Expr::binary_op(
+                BinaryOp::Mul,
                 s(0, 10),
                 Expr::number(s(0, 1), "3"),
-                Expr::add(
+                Expr::binary_op(
+                    BinaryOp::Add,
                     s(4, 6),
-                    Expr::add(
+                    Expr::binary_op(
+                        BinaryOp::Add,
                         s(4, 3),
                         Expr::number(s(4, 1), "1"),
                         Expr::number(s(6, 1), "2")
                     ),
                     Expr::number(s(9, 1), "5")
                 )
+            )
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn precedence() -> MultiResult<()> {
+        assert_eq!(
+            parse("1*2+3<4==5")?,
+            Expr::binary_op(
+                BinaryOp::Equal,
+                s(0, 10),
+                Expr::binary_op(
+                    BinaryOp::Less,
+                    s(0, 7),
+                    Expr::binary_op(
+                        BinaryOp::Add,
+                        s(0, 5),
+                        Expr::binary_op(
+                            BinaryOp::Mul,
+                            s(0, 3),
+                            Expr::number(s(0, 1), "1"),
+                            Expr::number(s(2, 1), "2")
+                        ),
+                        Expr::number(s(4, 1), "3"),
+                    ),
+                    Expr::number(s(6, 1), "4")
+                ),
+                Expr::number(s(9, 1), "5"),
             )
         );
         Ok(())
