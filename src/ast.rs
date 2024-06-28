@@ -11,6 +11,8 @@ pub struct Node<K> {
     pub src: Src,
 }
 
+pub type NodeRef<K> = Box<Node<K>>;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum UnaryOp {
     Not,
@@ -132,5 +134,3 @@ impl Expr {
         }
     }
 }
-
-pub type NodeRef<K> = Box<Node<K>>;
