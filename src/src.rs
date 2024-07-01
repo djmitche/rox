@@ -10,16 +10,25 @@ impl std::ops::Add for Src {
 
     /// The sum of two Src's is the smallest Src covering both.
     fn add(self, other: Self) -> Self {
-        if self.offset < other.offset {
-            Src {
-                offset: self.offset,
-                len: other.offset - self.offset + other.len,
-            }
+        let start_offset = if self.offset < other.offset {
+            self.offset
         } else {
-            Src {
-                offset: other.offset,
-                len: self.offset - other.offset + self.len,
-            }
+            other.offset
+        };
+        let end_offset = if self.offset + self.len < other.offset + other.len {
+            other.offset + other.len
+        } else {
+            self.offset + self.len
+        };
+        Src {
+            offset: start_offset,
+            len: end_offset - start_offset,
         }
+    }
+}
+
+impl std::ops::AddAssign for Src {
+    fn add_assign(&mut self, rhs: Self) {
+        *self = *self + rhs;
     }
 }

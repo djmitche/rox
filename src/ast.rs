@@ -3,12 +3,20 @@ use crate::token::TokenType;
 
 // TODO: consider https://crates.io/crates/syntree
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 pub struct Node<K> {
     pub inner: K,
     /// Source for this node, from the input program. For tokens not completely identified by `ty`,
     /// this is further interpreted during parsing.
     pub src: Src,
+}
+
+impl<K: std::fmt::Debug> std::fmt::Debug for Node<K> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple(&format!("Node@{}+{}", self.src.offset, self.src.len))
+            .field(&self.inner)
+            .finish()
+    }
 }
 
 pub type NodeRef<K> = Box<Node<K>>;
@@ -58,6 +66,43 @@ impl TryFrom<TokenType> for BinaryOp {
             TokenType::Greater => BinaryOp::Greater,
             _ => return Err(()),
         })
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Program {
+    pub statements: Vec<Node<Stmt>>,
+}
+
+impl Program {
+    #[allow(dead_code)] // currently only used in tests
+    pub fn stmts(src: Src, statements: Vec<Node<Stmt>>) -> Node<Program> {
+        Node {
+            inner: Program { statements },
+            src,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Stmt {
+    Expr(Node<Expr>),
+    Print(Node<Expr>),
+}
+
+impl Stmt {
+    pub fn expr(src: Src, value: Node<Expr>) -> Node<Self> {
+        Node {
+            inner: Stmt::Expr(value),
+            src,
+        }
+    }
+
+    pub fn print(src: Src, value: Node<Expr>) -> Node<Self> {
+        Node {
+            inner: Stmt::Print(value),
+            src,
+        }
     }
 }
 
