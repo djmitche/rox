@@ -88,7 +88,10 @@ impl<'p> Parser<'p> {
         };
         // Parse the unary expression following this operator.
         let (t, inner) = self.parse_unary(t + 1)?;
-        let result = Expr::unary_op(UnaryOp::try_from(*ty).unwrap(), src + inner.src, inner);
+        let result = Expr::unary(
+            src + inner.src,
+            UnaryOp::try_from(*ty).unwrap(),
+            inner);
         Ok((t, result))
     }
 
@@ -102,9 +105,9 @@ impl<'p> Parser<'p> {
             t += 1;
             let rhs;
             (t, rhs) = self.parse_unary(t)?;
-            value = Expr::binary_op(
-                BinaryOp::try_from(*ty).unwrap(),
+            value = Expr::binop(
                 value.src + rhs.src,
+                BinaryOp::try_from(*ty).unwrap(),
                 Box::new(value),
                 Box::new(rhs),
             );
@@ -121,9 +124,9 @@ impl<'p> Parser<'p> {
             t += 1;
             let rhs;
             (t, rhs) = self.parse_factor(t)?;
-            value = Expr::binary_op(
-                BinaryOp::try_from(*ty).unwrap(),
+            value = Expr::binop(
                 value.src + rhs.src,
+                BinaryOp::try_from(*ty).unwrap(),
                 Box::new(value),
                 Box::new(rhs),
             );
@@ -146,9 +149,9 @@ impl<'p> Parser<'p> {
             t += 1;
             let rhs;
             (t, rhs) = self.parse_term(t)?;
-            value = Expr::binary_op(
-                BinaryOp::try_from(*ty).unwrap(),
+            value = Expr::binop(
                 value.src + rhs.src,
+                BinaryOp::try_from(*ty).unwrap(),
                 Box::new(value),
                 Box::new(rhs),
             );
@@ -166,9 +169,9 @@ impl<'p> Parser<'p> {
             t += 1;
             let rhs;
             (t, rhs) = self.parse_comparison(t)?;
-            value = Expr::binary_op(
-                BinaryOp::try_from(*ty).unwrap(),
+            value = Expr::binop(
                 value.src + rhs.src,
+                BinaryOp::try_from(*ty).unwrap(),
                 Box::new(value),
                 Box::new(rhs),
             );
@@ -217,7 +220,7 @@ impl<'p> Parser<'p> {
             src = src + stmt.src;
             statements.push(stmt);
         }
-        Ok((t, Program::stmts(src, statements)))
+        Ok((t, Program::new(src, statements)))
     }
 }
 
@@ -257,7 +260,7 @@ mod test {
         let mut src = expr.src;
         src.len += 1; // Account for trailing semicolon.
         let stmt = Stmt::expr(src, expr);
-        Program::stmts(src, vec![stmt])
+        Program::new(src, vec![stmt])
     }
 
     #[test]
@@ -295,9 +298,9 @@ mod test {
     fn not() -> MultiResult<()> {
         assert_eq!(
             parse("!false;")?,
-            prog(Expr::unary_op(
-                UnaryOp::Not,
+            prog(Expr::unary(
                 s(0, 6),
+                UnaryOp::Not,
                 Expr::boolean(s(1, 5), false)
             ))
         );
@@ -308,9 +311,9 @@ mod test {
     fn neg() -> MultiResult<()> {
         assert_eq!(
             parse("-5;")?,
-            prog(Expr::unary_op(
-                UnaryOp::Neg,
+            prog(Expr::unary(
                 s(0, 2),
+                UnaryOp::Neg,
                 Expr::number(s(1, 1), "5")
             ))
         );
@@ -321,10 +324,13 @@ mod test {
     fn double_not() -> MultiResult<()> {
         assert_eq!(
             parse("!!false;")?,
-            prog(Expr::unary_op(
-                UnaryOp::Not,
+            prog(Expr::unary(
                 s(0, 7),
-                Expr::unary_op(UnaryOp::Not, s(1, 6), Expr::boolean(s(2, 5), false))
+                UnaryOp::Not,
+                Expr::unary(
+            s(1, 6),
+            UnaryOp::Not,
+            Expr::boolean(s(2, 5), false))
             ))
         );
         Ok(())
@@ -340,9 +346,9 @@ mod test {
     fn mul() -> MultiResult<()> {
         assert_eq!(
             parse("1 *2;")?,
-            prog(Expr::binary_op(
-                BinaryOp::Mul,
+            prog(Expr::binop(
                 s(0, 4),
+                BinaryOp::Mul,
                 Expr::number(s(0, 1), "1"),
                 Expr::number(s(3, 1), "2")
             ))
@@ -354,9 +360,9 @@ mod test {
     fn sub() -> MultiResult<()> {
         assert_eq!(
             parse("1 -2;")?,
-            prog(Expr::binary_op(
-                BinaryOp::Sub,
+            prog(Expr::binop(
                 s(0, 4),
+                BinaryOp::Sub,
                 Expr::number(s(0, 1), "1"),
                 Expr::number(s(3, 1), "2")
             ))
@@ -368,13 +374,13 @@ mod test {
     fn unnecessary_parens() -> MultiResult<()> {
         assert_eq!(
             parse("(1 *2);")?,
-            Program::stmts(
+            Program::new(
                 s(0, 7),
                 vec![Stmt::expr(
                     s(0, 7),
-                    Expr::binary_op(
-                        BinaryOp::Mul,
+                    Expr::binop(
                         s(0, 6),
+                        BinaryOp::Mul,
                         Expr::number(s(1, 1), "1"),
                         Expr::number(s(4, 1), "2")
                     )
@@ -388,13 +394,13 @@ mod test {
     fn parens() -> MultiResult<()> {
         assert_eq!(
             parse("3*(1 +2);")?,
-            prog(Expr::binary_op(
-                BinaryOp::Mul,
+            prog(Expr::binop(
                 s(0, 8),
+                BinaryOp::Mul,
                 Expr::number(s(0, 1), "3"),
-                Expr::binary_op(
-                    BinaryOp::Add,
+                Expr::binop(
                     s(2, 6),
+                    BinaryOp::Add,
                     Expr::number(s(3, 1), "1"),
                     Expr::number(s(6, 1), "2")
                 )
@@ -407,20 +413,20 @@ mod test {
     fn parens_nested() -> MultiResult<()> {
         assert_eq!(
             parse("3*((1+2)+5);")?,
-            Program::stmts(
+            Program::new(
                 s(0, 12),
                 vec![Stmt::expr(
                     s(0, 12),
-                    Expr::binary_op(
-                        BinaryOp::Mul,
+                    Expr::binop(
                         s(0, 11),
+                        BinaryOp::Mul,
                         Expr::number(s(0, 1), "3"),
-                        Expr::binary_op(
-                            BinaryOp::Add,
+                        Expr::binop(
                             s(2, 9),
-                            Expr::binary_op(
-                                BinaryOp::Add,
+                            BinaryOp::Add,
+                            Expr::binop(
                                 s(3, 5),
+                                BinaryOp::Add,
                                 Expr::number(s(4, 1), "1"),
                                 Expr::number(s(6, 1), "2")
                             ),
@@ -437,18 +443,18 @@ mod test {
     fn precedence() -> MultiResult<()> {
         assert_eq!(
             parse("1*2+3<4==5;")?,
-            prog(Expr::binary_op(
-                BinaryOp::Equal,
+            prog(Expr::binop(
                 s(0, 10),
-                Expr::binary_op(
-                    BinaryOp::Less,
+                BinaryOp::Equal,
+                Expr::binop(
                     s(0, 7),
-                    Expr::binary_op(
-                        BinaryOp::Add,
+                    BinaryOp::Less,
+                    Expr::binop(
                         s(0, 5),
-                        Expr::binary_op(
-                            BinaryOp::Mul,
+                        BinaryOp::Add,
+                        Expr::binop(
                             s(0, 3),
+                            BinaryOp::Mul,
                             Expr::number(s(0, 1), "1"),
                             Expr::number(s(2, 1), "2")
                         ),
@@ -466,7 +472,7 @@ mod test {
     fn program() -> MultiResult<()> {
         assert_eq!(
             parse("3; print 4;")?,
-            Program::stmts(s(0, 11), vec![
+            Program::new(s(0, 11), vec![
             Stmt::expr(s(0, 2), Expr::number(s(0, 1), "3")),
             Stmt::print(s(3, 8), Expr::number(s(9, 1), "4")),
         ]));

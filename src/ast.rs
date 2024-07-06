@@ -67,113 +67,28 @@ impl TryFrom<TokenType> for BinaryOp {
     }
 }
 
-#[derive(Debug, Default, PartialEq, Eq)]
-pub struct Program {
-    pub statements: Vec<Node<Stmt>>,
-}
-
-impl Program {
-    #[allow(dead_code)] // currently only used in tests
-    pub fn stmts(src: Src, statements: Vec<Node<Stmt>>) -> Node<Program> {
-        Node {
-            inner: Program { statements },
-            src,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum Stmt {
-    Expr(Node<Expr>),
-    Print(Node<Expr>),
-}
-
-impl Stmt {
-    pub fn expr(src: Src, value: Node<Expr>) -> Node<Self> {
-        Node {
-            inner: Stmt::Expr(value),
-            src,
-        }
+macros::ast! {
+    pub struct Program {
+        pub statements: Vec<Node<Stmt>>,
     }
 
-    pub fn print(src: Src, value: Node<Expr>) -> Node<Self> {
-        Node {
-            inner: Stmt::Print(value),
-            src,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum Expr {
-    /// Variable, carrying the name of the variable.
-    Variable(String),
-    /// String, containing the string content (without `"` characters).
-    String(String),
-    /// Number literal, containing its textual representation.
-    Number(String),
-    /// Boolean literal.
-    Boolean(bool),
-    /// Nil literal.
-    Nil,
-    /// A unary operation.
-    Unary(UnaryOp, NodeRef<Expr>),
-    /// A binary operation.
-    Binop(BinaryOp, NodeRef<Expr>, NodeRef<Expr>),
-}
-
-impl Expr {
-    pub fn variable(src: Src, value: impl Into<String>) -> Node<Self> {
-        Node {
-            inner: Expr::Variable(value.into()),
-            src,
-        }
+    pub enum Expr {
+        Variable(String),
+        String(String),
+        Number(String),
+        Boolean(bool),
+        Nil,
+        Unary(UnaryOp, NodeRef<Expr>),
+        Binop(BinaryOp, NodeRef<Expr>, NodeRef<Expr>),
     }
 
-    pub fn string(src: Src, value: impl Into<String>) -> Node<Self> {
-        Node {
-            inner: Expr::String(value.into()),
-            src,
-        }
-    }
-
-    pub fn number(src: Src, value: impl Into<String>) -> Node<Self> {
-        Node {
-            inner: Expr::Number(value.into()),
-            src,
-        }
-    }
-
-    pub fn boolean(src: Src, value: bool) -> Node<Self> {
-        Node {
-            inner: Expr::Boolean(value),
-            src,
-        }
-    }
-
-    pub fn nil(src: Src) -> Node<Self> {
-        Node {
-            inner: Expr::Nil,
-            src,
-        }
-    }
-
-    pub fn unary_op(op: UnaryOp, src: Src, child: impl Into<NodeRef<Self>>) -> Node<Self> {
-        Node {
-            inner: Expr::Unary(op, child.into()),
-            src,
-        }
-    }
-
-    pub fn binary_op(
-        op: BinaryOp,
-        src: Src,
-        lhs: impl Into<NodeRef<Self>>,
-        rhs: impl Into<NodeRef<Self>>,
-    ) -> Node<Self> {
-        Node {
-            inner: Expr::Binop(op, lhs.into(), rhs.into()),
-            src,
+    pub enum Stmt {
+        Expr(Node<Expr>),
+        Print(Node<Expr>),
+        Conditional{
+            cond: Node<Expr>,
+            conseq: NodeRef<Stmt>,
+            altern: NodeRef<Stmt>,
         }
     }
 }

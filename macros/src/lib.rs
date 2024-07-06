@@ -1,4 +1,3 @@
-#![allow(unreachable_code, dead_code)]
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::quote;
@@ -7,14 +6,12 @@ use syn::{
     punctuated::Punctuated,
     spanned::Spanned,
     token::Comma,
-    AngleBracketedGenericArguments, Error, Expr, ExprStruct, Field, FieldValue, Fields, FnArg,
-    GenericArgument, Ident, Item, ItemEnum, Member, Pat, PatIdent, PatLit, PatType, Path,
-    PathArguments, PathSegment, Token, TraitBound, TraitBoundModifier, Type, TypeImplTrait,
+    AngleBracketedGenericArguments, Error, Expr, Field, FieldValue, Fields, FnArg,
+    GenericArgument, Ident, Item, ItemEnum, ItemStruct, Pat, PatIdent, PatType,
+    Path, PathArguments, PathSegment, Token, TraitBound, TraitBoundModifier, Type, TypeImplTrait,
     TypeParamBound,
 };
 
-// XXX remove this plus syn's extra-traits feature
-#[derive(Debug)]
 struct Items(Vec<Item>);
 
 impl Parse for Items {
@@ -27,6 +24,16 @@ impl Parse for Items {
     }
 }
 
+/// Define a set of related types as an AST.
+///
+/// The caller must have `src::Src`, `ast::Node` and `ast::NodeRef` in scope.
+///
+/// Each type is outfitted with constructors. For structs, that is `new`, while for enums one
+/// constructor is created for each variant, with a lower-case name. Constructors take a `Src`
+/// as first argument, follwed by the fields in the struct or variant. Each field is defined as
+/// `impl Into<T>`, and calls to `.into()` added.
+///
+/// Traits `Debug`, `PartialEq`, and `Eq` are derived for each type.
 #[proc_macro]
 pub fn ast(input: TokenStream) -> TokenStream {
     let items = syn::parse_macro_input!(input as Items);
@@ -41,10 +48,53 @@ pub fn ast(input: TokenStream) -> TokenStream {
 
 fn ast_item(item: Item) -> syn::Result<proc_macro2::TokenStream> {
     match item {
-        //Item::Struct(item) => Err(Error::new(item.span(), "not impl")),
+        Item::Struct(item) => struct_item(item),
         Item::Enum(item) => enum_item(item),
         _ => Ok(proc_macro2::TokenStream::from(quote!(#item))),
     }
+}
+
+fn struct_item(item: ItemStruct) -> syn::Result<proc_macro2::TokenStream> {
+    let mut result = proc_macro2::TokenStream::new();
+
+    result.extend(proc_macro2::TokenStream::from(quote! {
+        #[derive(Debug, PartialEq, Eq)]
+        #item
+    }));
+
+    // Create a constructor.
+    let struct_name = &item.ident;
+    let vis = &item.vis;
+    let mut methods = proc_macro2::TokenStream::new();
+    let Fields::Named(fields) = item.fields else {
+        panic!("expected named fields");
+    };
+    let args: Punctuated<FnArg, Comma> =
+        fields.named.iter().map(|f| fn_arg_impl_into(&f)).collect();
+    let long_init: Punctuated<FieldValue, Comma> = fields
+        .named
+        .iter()
+        .map(|f| {
+            let name = f.ident.as_ref().map(|i| i.to_string()).unwrap();
+            syn::parse_str::<FieldValue>(&format!("{name}: {name}.into()")).unwrap()
+        })
+        .collect();
+    methods.extend(proc_macro2::TokenStream::from(quote! {
+        #vis fn new(src: Src, #args) -> Node<#struct_name> {
+            Node {
+                src,
+                inner: #struct_name { #long_init },
+            }
+        }
+    }));
+
+    result.extend(proc_macro2::TokenStream::from(quote! {
+        #[allow(dead_code)]
+        impl #struct_name {
+            #methods
+        }
+    }));
+    Ok(result)
 }
 
 fn enum_item(item: ItemEnum) -> syn::Result<proc_macro2::TokenStream> {
@@ -57,6 +107,7 @@ fn enum_item(item: ItemEnum) -> syn::Result<proc_macro2::TokenStream> {
 
     // Create a constructor for each variant, returning `Node<K>`.
     let enum_name = &item.ident;
+    let vis = &item.vis;
     let mut methods = proc_macro2::TokenStream::new();
     for variant in item.variants {
         let var_name = &variant.ident;
@@ -75,7 +126,7 @@ fn enum_item(item: ItemEnum) -> syn::Result<proc_macro2::TokenStream> {
                     })
                     .collect();
                 methods.extend(proc_macro2::TokenStream::from(quote! {
-                    fn #constr_name(src: Src, #args) -> Node<#enum_name> {
+                    #vis fn #constr_name(src: Src, #args) -> Node<#enum_name> {
                         Node {
                             src,
                             inner: #enum_name::#var_name { #long_init },
@@ -101,7 +152,7 @@ fn enum_item(item: ItemEnum) -> syn::Result<proc_macro2::TokenStream> {
                     .map(|(i, _)| syn::parse_str::<Expr>(&format!("v{i}.into()")).unwrap())
                     .collect();
                 methods.extend(proc_macro2::TokenStream::from(quote! {
-                    fn #constr_name(src: Src, #args) -> Node<#enum_name> {
+                    #vis fn #constr_name(src: Src, #args) -> Node<#enum_name> {
                         Node {
                             src,
                             inner: #enum_name::#var_name(#fields),
@@ -111,7 +162,7 @@ fn enum_item(item: ItemEnum) -> syn::Result<proc_macro2::TokenStream> {
             }
             Fields::Unit => {
                 methods.extend(proc_macro2::TokenStream::from(quote! {
-                    fn #constr_name(src: Src) -> Node<#enum_name> {
+                    #vis fn #constr_name(src: Src) -> Node<#enum_name> {
                         Node {
                             src,
                             inner: #enum_name::#var_name,
@@ -122,6 +173,7 @@ fn enum_item(item: ItemEnum) -> syn::Result<proc_macro2::TokenStream> {
         };
     }
     result.extend(proc_macro2::TokenStream::from(quote! {
+        #[allow(dead_code)]
         impl #enum_name {
             #methods
         }
@@ -129,6 +181,7 @@ fn enum_item(item: ItemEnum) -> syn::Result<proc_macro2::TokenStream> {
     Ok(result)
 }
 
+// Return the lower-case version of an identifier.
 fn lowercase(ident: &Ident) -> Ident {
     let name = ident.to_string().to_lowercase();
     Ident::new(&name, ident.span())
