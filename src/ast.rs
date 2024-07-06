@@ -6,8 +6,6 @@ use crate::token::TokenType;
 #[derive(PartialEq, Eq)]
 pub struct Node<K> {
     pub inner: K,
-    /// Source for this node, from the input program. For tokens not completely identified by `ty`,
-    /// this is further interpreted during parsing.
     pub src: Src,
 }
 
