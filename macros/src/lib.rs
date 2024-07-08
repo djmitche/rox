@@ -81,37 +81,37 @@ impl AstGenerator {
         }
 
         for (name, tokens) in self.out_type_defs.drain() {
-            result.extend(proc_macro2::TokenStream::from(quote! {
+            result.extend(quote! {
                 #[derive(Debug, PartialEq, Eq)]
                 #tokens
-            }));
+            });
 
             if let Some(tokens) = self.out_type_impls.remove(&name) {
-                result.extend(proc_macro2::TokenStream::from(quote! {
+                result.extend(quote! {
                     #[allow(dead_code)]
                     impl #name {
                         #tokens
                     }
-                }));
+                });
             }
 
             if let Some(tokens) = self.out_node_type_impls.remove(&name) {
-                result.extend(proc_macro2::TokenStream::from(quote! {
+                result.extend(quote! {
                     #[allow(dead_code)]
                     impl Node<#name> {
                         #tokens
                     }
-                }));
+                });
             }
         }
 
         let tokens = self.out_visitor_trait;
-        result.extend(proc_macro2::TokenStream::from(quote! {
+        result.extend(quote! {
             #[allow(dead_code)]
             trait Visitor {
                 #tokens
             }
-        }));
+        });
 
         result.extend(std::mem::take(&mut self.out_passthrough));
         result.into()
@@ -122,9 +122,7 @@ impl AstGenerator {
             Item::Struct(item) => self.struct_item(item)?,
             Item::Enum(item) => self.enum_item(item)?,
             //Item::Trait(item) if item.ident.to_string() == "Visitor" => visitor_trait_item(item),
-            _ => self
-                .out_passthrough
-                .extend(proc_macro2::TokenStream::from(quote!(#item))),
+            _ => self.out_passthrough.extend(quote!(#item)),
         };
         Ok(())
     }
@@ -135,9 +133,9 @@ impl AstGenerator {
 
         self.out_type_defs.insert(
             struct_name.clone(),
-            proc_macro2::TokenStream::from(quote! {
+            quote! {
                 #item
-            }),
+            },
         );
 
         // Create a constructor.
@@ -145,8 +143,7 @@ impl AstGenerator {
         let Fields::Named(fields) = item.fields else {
             panic!("expected named fields");
         };
-        let args: Punctuated<FnArg, Comma> =
-            fields.named.iter().map(|f| fn_arg_impl_into(&f)).collect();
+        let args: Punctuated<FnArg, Comma> = fields.named.iter().map(fn_arg_impl_into).collect();
         let long_init: Punctuated<FieldValue, Comma> = fields
             .named
             .iter()
@@ -155,7 +152,7 @@ impl AstGenerator {
                 syn::parse_str::<FieldValue>(&format!("{name}: {name}.into()")).unwrap()
             })
             .collect();
-        methods.extend(proc_macro2::TokenStream::from(quote! {
+        methods.extend(quote! {
             #[inline]
             #vis fn new(src: Src, #args) -> Node<#struct_name> {
                 Node {
@@ -163,12 +160,12 @@ impl AstGenerator {
                     inner: #struct_name { #long_init },
                 }
             }
-        }));
+        });
         self.out_type_impls.insert(struct_name.clone(), methods);
 
-        self.add_visitor_pre(&struct_name)?;
-        self.add_visitor_post(&struct_name)?;
-        self.add_node_type_impl(&struct_name)?;
+        self.add_visitor_pre(struct_name)?;
+        self.add_visitor_post(struct_name)?;
+        self.add_node_type_impl(struct_name)?;
 
         // TODO: visitor recurse fn
 
@@ -181,9 +178,9 @@ impl AstGenerator {
 
         self.out_type_defs.insert(
             enum_name.clone(),
-            proc_macro2::TokenStream::from(quote! {
+            quote! {
                 #item
-            }),
+            },
         );
 
         // Create a constructor for each variant, returning `Node<K>`.
@@ -270,9 +267,7 @@ impl AstGenerator {
                         .unnamed
                         .iter()
                         .enumerate()
-                        .map(|(i, f)| {
-                            Ident::new(&format!("v{i}"), f.ident.span())
-                        })
+                        .map(|(i, f)| Ident::new(&format!("v{i}"), f.ident.span()))
                         .collect();
                     match_body.extend(proc_macro2::TokenStream::from(quote! {
                         // TODO: traverse the Node/NodeRef values.
