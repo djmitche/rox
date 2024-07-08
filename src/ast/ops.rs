@@ -1,23 +1,4 @@
-use crate::src::Src;
 use crate::token::TokenType;
-
-// TODO: consider https://crates.io/crates/syntree
-
-#[derive(PartialEq, Eq)]
-pub struct Node<K> {
-    pub inner: K,
-    pub src: Src,
-}
-
-impl<K: std::fmt::Debug> std::fmt::Debug for Node<K> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple(&format!("Node@{}+{}", self.src.offset, self.src.len))
-            .field(&self.inner)
-            .finish()
-    }
-}
-
-pub type NodeRef<K> = Box<Node<K>>;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum UnaryOp {
@@ -67,28 +48,3 @@ impl TryFrom<TokenType> for BinaryOp {
     }
 }
 
-macros::ast! {
-    pub struct Program {
-        pub statements: Vec<Node<Stmt>>,
-    }
-
-    pub enum Expr {
-        Variable(String),
-        String(String),
-        Number(String),
-        Boolean(bool),
-        Nil,
-        Unary(UnaryOp, NodeRef<Expr>),
-        Binop(BinaryOp, NodeRef<Expr>, NodeRef<Expr>),
-    }
-
-    pub enum Stmt {
-        Expr(Node<Expr>),
-        Print(Node<Expr>),
-        Conditional{
-            cond: Node<Expr>,
-            conseq: NodeRef<Stmt>,
-            altern: NodeRef<Stmt>,
-        }
-    }
-}

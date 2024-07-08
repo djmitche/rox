@@ -1,5 +1,6 @@
 #![allow(unused_imports, dead_code)]
-use crate::ast::{BinaryOp, Expr, Node, NodeRef, Program, Stmt, UnaryOp};
+use crate::ast::{BinaryOp, Node, NodeRef, UnaryOp};
+use crate::ast::parsed::{Expr, Program, Stmt};
 use crate::error::{Error, Errors, MultiResult, Result};
 use crate::scanner::scan;
 use crate::src::Src;
