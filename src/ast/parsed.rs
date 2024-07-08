@@ -32,6 +32,7 @@ macros::ast! {
 // TODO: pass &mut src??
 // TODO: generate this with `ast!`
 
+/*
 impl Node<Program> {
     #[inline]
     pub fn traverse<V: Visitor>(&mut self, v: &mut V) -> Result<()> {
@@ -182,3 +183,4 @@ mod test {
         Ok(())
     }
 }
+*/
