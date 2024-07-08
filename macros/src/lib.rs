@@ -187,12 +187,12 @@ impl AstGenerator {
         let mut methods = proc_macro2::TokenStream::new();
         for variant in &item.variants {
             let var_name = &variant.ident;
-            let constr_name = lowercase(&var_name);
+            let constr_name = lowercase(var_name);
 
             match &variant.fields {
                 Fields::Named(fields) => {
                     let args: Punctuated<FnArg, Comma> =
-                        fields.named.iter().map(|f| fn_arg_impl_into(&f)).collect();
+                        fields.named.iter().map(fn_arg_impl_into).collect();
                     let long_init: Punctuated<FieldValue, Comma> = fields
                         .named
                         .iter()
@@ -201,7 +201,7 @@ impl AstGenerator {
                             syn::parse_str::<FieldValue>(&format!("{name}: {name}.into()")).unwrap()
                         })
                         .collect();
-                    methods.extend(proc_macro2::TokenStream::from(quote! {
+                    methods.extend(quote! {
                         #[inline]
                         #vis fn #constr_name(src: Src, #args) -> Node<#enum_name> {
                             Node {
@@ -209,7 +209,7 @@ impl AstGenerator {
                                 inner: #enum_name::#var_name { #long_init },
                             }
                         }
-                    }));
+                    });
                 }
                 Fields::Unnamed(fields) => {
                     let args: Punctuated<FnArg, Comma> = fields
@@ -228,7 +228,7 @@ impl AstGenerator {
                         .enumerate()
                         .map(|(i, _)| syn::parse_str::<Expr>(&format!("v{i}.into()")).unwrap())
                         .collect();
-                    methods.extend(proc_macro2::TokenStream::from(quote! {
+                    methods.extend(quote! {
                         #[inline]
                         #vis fn #constr_name(src: Src, #args) -> Node<#enum_name> {
                             Node {
@@ -236,10 +236,10 @@ impl AstGenerator {
                                 inner: #enum_name::#var_name(#fields),
                             }
                         }
-                    }));
+                    });
                 }
                 Fields::Unit => {
-                    methods.extend(proc_macro2::TokenStream::from(quote! {
+                    methods.extend(quote! {
                         #[inline]
                         #vis fn #constr_name(src: Src) -> Node<#enum_name> {
                             Node {
@@ -247,7 +247,7 @@ impl AstGenerator {
                                 inner: #enum_name::#var_name,
                             }
                         }
-                    }));
+                    });
                 }
             };
         }
@@ -269,10 +269,10 @@ impl AstGenerator {
                         .enumerate()
                         .map(|(i, f)| Ident::new(&format!("v{i}"), f.ident.span()))
                         .collect();
-                    match_body.extend(proc_macro2::TokenStream::from(quote! {
+                    match_body.extend(quote! {
                         // TODO: traverse the Node/NodeRef values.
                         #var_name ( #args ) => todo!(),
-                    }));
+                    });
                 }
                 Fields::Unit => {}
             };
@@ -280,7 +280,7 @@ impl AstGenerator {
         let lower_name = enum_name.to_string().to_lowercase();
         let recurse = Ident::new(&format!("{lower_name}_recurse"), enum_name.span());
         self.out_visitor_trait
-            .extend(proc_macro2::TokenStream::from(quote! {
+            .extend(quote! {
                 #[inline]
                 fn #recurse(&mut self, val: &mut #enum_name) -> Result<()> {
                     #[allow(unused_variables, unreachable_patterns)]
@@ -290,11 +290,11 @@ impl AstGenerator {
                     };
                     Ok(())
                 }
-            }));
+            });
 
-        self.add_visitor_pre(&enum_name)?;
-        self.add_visitor_post(&enum_name)?;
-        self.add_node_type_impl(&enum_name)?;
+        self.add_visitor_pre(enum_name)?;
+        self.add_visitor_post(enum_name)?;
+        self.add_node_type_impl(enum_name)?;
 
         // TODO: visitor recurse fn
 
@@ -305,12 +305,12 @@ impl AstGenerator {
         let lower_name = name.to_string().to_lowercase();
         let pre = Ident::new(&format!("{lower_name}_pre"), name.span());
         self.out_visitor_trait
-            .extend(proc_macro2::TokenStream::from(quote! {
+            .extend(quote! {
                 #[inline]
                 fn #pre(&mut self, val: &mut #name) -> Result<bool> {
                     Ok(true)
                 }
-            }));
+            });
         Ok(())
     }
 
@@ -318,12 +318,12 @@ impl AstGenerator {
         let lower_name = name.to_string().to_lowercase();
         let post = Ident::new(&format!("{lower_name}_post"), name.span());
         self.out_visitor_trait
-            .extend(proc_macro2::TokenStream::from(quote! {
+            .extend(quote! {
                 #[inline]
                 fn #post(&mut self, val: &mut #name) -> Result<()> {
                     Ok(())
                 }
-            }));
+            });
         Ok(())
     }
 
@@ -335,7 +335,7 @@ impl AstGenerator {
         let recurse = Ident::new(&format!("{lower_name}_recurse"), name.span());
         let post = Ident::new(&format!("{lower_name}_post"), name.span());
 
-        node_methods.extend(proc_macro2::TokenStream::from(quote! {
+        node_methods.extend(quote! {
             #[inline]
             pub fn traverse<V: Visitor>(&mut self, vis: &mut V) -> crate::error::Result<()> {
                 if !vis.#pre(&mut self.inner)? {
@@ -344,7 +344,7 @@ impl AstGenerator {
                 vis.#recurse(&mut self.inner)?;
                 vis.#post(&mut self.inner)
             }
-        }));
+        });
 
         self.out_node_type_impls.insert(name.clone(), node_methods);
         Ok(())
