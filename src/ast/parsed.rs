@@ -18,7 +18,6 @@ macros::ast! {
         Nil,
         Unary(UnaryOp, NodeRef<Expr>),
         BinOp(BinaryOp, NodeRef<Expr>, NodeRef<Expr>),
-       BinOp2{op: BinaryOp, l: NodeRef<Expr>, r: NodeRef<Expr>, },
     }
 
     pub enum Stmt {

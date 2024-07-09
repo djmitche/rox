@@ -7,7 +7,7 @@ use syn::{
     punctuated::Punctuated,
     spanned::Spanned,
     token::Comma,
-    AngleBracketedGenericArguments, Arm, Error, Expr, Field, FieldPat, FieldValue, Fields, FnArg,
+    AngleBracketedGenericArguments, Expr, Field, FieldValue, Fields, FnArg,
     GenericArgument, Ident, Item, ItemEnum, ItemStruct, Pat, PatIdent, PatType, Path,
     PathArguments, PathSegment, Token, TraitBound, TraitBoundModifier, Type, TypeImplTrait,
     TypeParamBound,
@@ -35,6 +35,23 @@ impl Parse for Items {
 /// `impl Into<T>`, and calls to `.into()` added.
 ///
 /// Traits `Debug`, `PartialEq`, and `Eq` are derived for each type.
+///
+/// ## Visitor Pattern
+///
+/// A `Visitor` trait is defined with three methods for each type:
+/// 
+///  * `fn type_start(&mut self, val: &mut Type) -> Result<bool>`
+///  * `fn type_recurse(&mut self, val: &mut Type) -> Result<()>`
+///  * `fn type_end(&mut self, val: &mut Type) -> Result<()>`
+///
+/// This trait can be implemented for a type that will implement the visitor pattern over an AST.
+/// Visting begins with a call to [`Node::traverse`], passing a reference to the visitor. This
+/// begins a recursive descent into the AST. For each node, it first invokes `type_start`, then
+/// `type_recurse`, then `type_end`. If `type_start` returns false, the other to methods are not
+/// called. All three methods have default implementations, with `type_recurse` automatically
+/// recursing into any component values of type [`Node`] or [`NodeRef`] or an `Option` or `Vec` of
+/// those.
+
 #[proc_macro]
 pub fn ast(input: TokenStream) -> TokenStream {
     AstGenerator::default().generate(input)
@@ -109,7 +126,7 @@ impl AstGenerator {
         let tokens = self.out_visitor_trait;
         result.extend(quote! {
             #[allow(dead_code)]
-            trait Visitor: Sized {
+            pub trait Visitor: Sized {
                 #tokens
             }
         });
@@ -166,7 +183,7 @@ impl AstGenerator {
         });
         self.out_type_impls.insert(struct_name.clone(), methods);
 
-        self.add_visitor_pre(struct_name)?;
+        self.add_visitor_start(struct_name)?;
 
         // Create a <type>_recurse fn.
         let lower_name = struct_name.to_string().to_lowercase();
@@ -180,7 +197,7 @@ impl AstGenerator {
             }
         });
 
-        self.add_visitor_post(struct_name)?;
+        self.add_visitor_end(struct_name)?;
         self.add_node_type_impl(struct_name)?;
 
         Ok(())
@@ -297,7 +314,7 @@ impl AstGenerator {
         }
         self.out_type_impls.insert(enum_name.clone(), methods);
 
-        self.add_visitor_pre(enum_name)?;
+        self.add_visitor_start(enum_name)?;
         let lower_name = enum_name.to_string().to_lowercase();
         let recurse = Ident::new(&format!("{lower_name}_recurse"), enum_name.span());
         self.out_visitor_trait.extend(quote! {
@@ -311,16 +328,16 @@ impl AstGenerator {
                 Ok(())
             }
         });
-        self.add_visitor_post(enum_name)?;
+        self.add_visitor_end(enum_name)?;
 
         self.add_node_type_impl(enum_name)?;
 
         Ok(())
     }
 
-    fn add_visitor_pre(&mut self, name: &Ident) -> syn::Result<()> {
+    fn add_visitor_start(&mut self, name: &Ident) -> syn::Result<()> {
         let lower_name = name.to_string().to_lowercase();
-        let pre = Ident::new(&format!("{lower_name}_pre"), name.span());
+        let pre = Ident::new(&format!("{lower_name}_start"), name.span());
         self.out_visitor_trait.extend(quote! {
             #[inline]
             fn #pre(&mut self, val: &mut #name) -> crate::error::Result<bool> {
@@ -330,9 +347,9 @@ impl AstGenerator {
         Ok(())
     }
 
-    fn add_visitor_post(&mut self, name: &Ident) -> syn::Result<()> {
+    fn add_visitor_end(&mut self, name: &Ident) -> syn::Result<()> {
         let lower_name = name.to_string().to_lowercase();
-        let post = Ident::new(&format!("{lower_name}_post"), name.span());
+        let post = Ident::new(&format!("{lower_name}_end"), name.span());
         self.out_visitor_trait.extend(quote! {
             #[inline]
             fn #post(&mut self, val: &mut #name) -> Result<()> {
@@ -346,9 +363,9 @@ impl AstGenerator {
         let mut node_methods = proc_macro2::TokenStream::new();
 
         let lower_name = name.to_string().to_lowercase();
-        let pre = Ident::new(&format!("{lower_name}_pre"), name.span());
+        let pre = Ident::new(&format!("{lower_name}_start"), name.span());
         let recurse = Ident::new(&format!("{lower_name}_recurse"), name.span());
-        let post = Ident::new(&format!("{lower_name}_post"), name.span());
+        let post = Ident::new(&format!("{lower_name}_end"), name.span());
 
         node_methods.extend(quote! {
             #[inline]
