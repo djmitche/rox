@@ -45,7 +45,7 @@ impl std::fmt::Display for Errors {
         writeln!(f, "From {}:", self.phase)?;
         for e in &self.errors {
             e.fmt(f)?;
-            write!(f, "\n")?;
+            writeln!(f)?;
         }
         Ok(())
     }

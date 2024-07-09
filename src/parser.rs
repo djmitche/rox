@@ -218,7 +218,7 @@ impl<'p> Parser<'p> {
         while t < self.tokens.len() {
             let stmt;
             (t, stmt) = self.parse_statement(t)?;
-            src = src + stmt.src;
+            src += stmt.src;
             statements.push(stmt);
         }
         Ok((t, Program::new(src, statements)))

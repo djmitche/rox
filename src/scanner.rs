@@ -239,7 +239,7 @@ mod test {
     /// The cost is that assertions don't completely cover those offsets. For example, in `a + a`,
     /// the first and last tokens are represented as `(Identifier, "a")`, and the assertion would
     /// pass even if both are slices of the first occurrence of `a` in the program.
-    fn scan_result<'p>(program: &'p str) -> Vec<(TokenType, &'p str)> {
+    fn scan_result(program: &str) -> Vec<(TokenType, &str)> {
         let tokens = scan(dbg!(program)).unwrap();
         tokens
             .into_iter()
