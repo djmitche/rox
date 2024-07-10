@@ -5,6 +5,7 @@ mod run;
 mod scanner;
 mod src;
 mod token;
+mod interpreter;
 
 use anyhow::Result;
 
