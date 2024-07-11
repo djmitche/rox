@@ -1,6 +1,6 @@
 #![allow(unused_imports, dead_code)]
-use crate::ast::{BinaryOp, Node, NodeRef, UnaryOp};
 use crate::ast::parsed::{Expr, Program, Stmt};
+use crate::ast::{BinaryOp, Node, NodeRef, UnaryOp};
 use crate::error::{Error, Errors, MultiResult, Result};
 use crate::scanner::scan;
 use crate::src::Src;
@@ -89,10 +89,7 @@ impl<'p> Parser<'p> {
         };
         // Parse the unary expression following this operator.
         let (t, inner) = self.parse_unary(t + 1)?;
-        let result = Expr::unary(
-            src + inner.src,
-            UnaryOp::try_from(*ty).unwrap(),
-            inner);
+        let result = Expr::unary(src + inner.src, UnaryOp::try_from(*ty).unwrap(), inner);
         Ok((t, result))
     }
 
@@ -328,10 +325,7 @@ mod test {
             prog(Expr::unary(
                 s(0, 7),
                 UnaryOp::Not,
-                Expr::unary(
-            s(1, 6),
-            UnaryOp::Not,
-            Expr::boolean(s(2, 5), false))
+                Expr::unary(s(1, 6), UnaryOp::Not, Expr::boolean(s(2, 5), false))
             ))
         );
         Ok(())
@@ -473,10 +467,14 @@ mod test {
     fn program() -> MultiResult<()> {
         assert_eq!(
             parse("3; print 4;")?,
-            Program::new(s(0, 11), vec![
-            Stmt::expr(s(0, 2), Expr::number(s(0, 1), "3")),
-            Stmt::print(s(3, 8), Expr::number(s(9, 1), "4")),
-        ]));
+            Program::new(
+                s(0, 11),
+                vec![
+                    Stmt::expr(s(0, 2), Expr::number(s(0, 1), "3")),
+                    Stmt::print(s(3, 8), Expr::number(s(9, 1), "4")),
+                ]
+            )
+        );
         Ok(())
     }
 }

@@ -7,10 +7,9 @@ use syn::{
     punctuated::Punctuated,
     spanned::Spanned,
     token::Comma,
-    AngleBracketedGenericArguments, Expr, Field, FieldValue, Fields, FnArg,
-    GenericArgument, Ident, Item, ItemEnum, ItemStruct, Pat, PatIdent, PatType, Path,
-    PathArguments, PathSegment, Token, TraitBound, TraitBoundModifier, Type, TypeImplTrait,
-    TypeParamBound,
+    AngleBracketedGenericArguments, Expr, Field, FieldValue, Fields, FnArg, GenericArgument, Ident,
+    Item, ItemEnum, ItemStruct, Pat, PatIdent, PatType, Path, PathArguments, PathSegment, Token,
+    TraitBound, TraitBoundModifier, Type, TypeImplTrait, TypeParamBound,
 };
 
 struct Items(Vec<Item>);
@@ -39,7 +38,7 @@ impl Parse for Items {
 /// ## Visitor Pattern
 ///
 /// A `Visitor` trait is defined with three methods for each type:
-/// 
+///
 ///  * `fn type_start(&mut self, val: &mut Type) -> Result<bool>`
 ///  * `fn type_recurse(&mut self, val: &mut Type) -> Result<()>`
 ///  * `fn type_end(&mut self, val: &mut Type) -> Result<()>`

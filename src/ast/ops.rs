@@ -47,4 +47,3 @@ impl TryFrom<TokenType> for BinaryOp {
         })
     }
 }
-

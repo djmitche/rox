@@ -1,11 +1,11 @@
 mod ast;
 mod error;
+mod interpreter;
 mod parser;
 mod run;
 mod scanner;
 mod src;
 mod token;
-mod interpreter;
 
 use anyhow::Result;
 
