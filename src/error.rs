@@ -28,6 +28,13 @@ impl Errors {
         }
     }
 
+    pub fn from_error(phase: &'static str, error: Error) -> Self {
+        Errors {
+            phase,
+            errors: vec![error],
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.errors.is_empty()
     }
