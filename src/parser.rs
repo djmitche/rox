@@ -1,5 +1,5 @@
 #![allow(unused_imports, dead_code)]
-use crate::ast::parsed::{Expr, Program, Stmt};
+use crate::ast::parsed::{Declaration, Expr, Program, Stmt};
 use crate::ast::{BinaryOp, Node, NodeRef, UnaryOp};
 use crate::error::{Error, Errors, MultiResult, Result};
 use crate::scanner::scan;
@@ -208,17 +208,22 @@ impl<'p> Parser<'p> {
         Ok((t, stmt))
     }
 
+    fn parse_declaration(&mut self, t: usize) -> MultiResult<(usize, Node<Declaration>)> {
+        let (t, stmt) = self.parse_statement(t)?;
+        Ok((t, Declaration::stmt(stmt.src, stmt)))
+    }
+
     fn parse_program(&mut self, mut t: usize) -> MultiResult<(usize, Node<Program>)> {
-        let mut statements = Vec::new();
+        let mut declarations = Vec::new();
         let offset = self.tokens.get(t).map(|tok| tok.src.offset).unwrap_or(0);
         let mut src = Src { offset, len: 0 };
         while t < self.tokens.len() {
-            let stmt;
-            (t, stmt) = self.parse_statement(t)?;
-            src += stmt.src;
-            statements.push(stmt);
+            let decl;
+            (t, decl) = self.parse_declaration(t)?;
+            src += decl.src;
+            declarations.push(decl);
         }
-        Ok((t, Program::new(src, statements)))
+        Ok((t, Program::new(src, declarations)))
     }
 }
 
@@ -258,7 +263,8 @@ mod test {
         let mut src = expr.src;
         src.len += 1; // Account for trailing semicolon.
         let stmt = Stmt::expr(src, expr);
-        Program::new(src, vec![stmt])
+        let decl = Declaration::stmt(src, stmt);
+        Program::new(src, vec![decl])
     }
 
     #[test]
@@ -371,13 +377,16 @@ mod test {
             parse("(1 *2);")?,
             Program::new(
                 s(0, 7),
-                vec![Stmt::expr(
+                vec![Declaration::stmt(
                     s(0, 7),
-                    Expr::binop(
-                        s(0, 6),
-                        BinaryOp::Mul,
-                        Expr::number(s(1, 1), "1"),
-                        Expr::number(s(4, 1), "2")
+                    Stmt::expr(
+                        s(0, 7),
+                        Expr::binop(
+                            s(0, 6),
+                            BinaryOp::Mul,
+                            Expr::number(s(1, 1), "1"),
+                            Expr::number(s(4, 1), "2")
+                        )
                     )
                 )]
             )
@@ -410,22 +419,25 @@ mod test {
             parse("3*((1+2)+5);")?,
             Program::new(
                 s(0, 12),
-                vec![Stmt::expr(
+                vec![Declaration::stmt(
                     s(0, 12),
-                    Expr::binop(
-                        s(0, 11),
-                        BinaryOp::Mul,
-                        Expr::number(s(0, 1), "3"),
+                    Stmt::expr(
+                        s(0, 12),
                         Expr::binop(
-                            s(2, 9),
-                            BinaryOp::Add,
+                            s(0, 11),
+                            BinaryOp::Mul,
+                            Expr::number(s(0, 1), "3"),
                             Expr::binop(
-                                s(3, 5),
+                                s(2, 9),
                                 BinaryOp::Add,
-                                Expr::number(s(4, 1), "1"),
-                                Expr::number(s(6, 1), "2")
-                            ),
-                            Expr::number(s(9, 1), "5")
+                                Expr::binop(
+                                    s(3, 5),
+                                    BinaryOp::Add,
+                                    Expr::number(s(4, 1), "1"),
+                                    Expr::number(s(6, 1), "2")
+                                ),
+                                Expr::number(s(9, 1), "5")
+                            )
                         )
                     )
                 )]
@@ -470,8 +482,8 @@ mod test {
             Program::new(
                 s(0, 11),
                 vec![
-                    Stmt::expr(s(0, 2), Expr::number(s(0, 1), "3")),
-                    Stmt::print(s(3, 8), Expr::number(s(9, 1), "4")),
+                    Declaration::stmt(s(0, 2), Stmt::expr(s(0, 2), Expr::number(s(0, 1), "3"))),
+                    Declaration::stmt(s(3, 8), Stmt::print(s(3, 8), Expr::number(s(9, 1), "4"))),
                 ]
             )
         );

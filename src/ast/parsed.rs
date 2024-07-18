@@ -7,7 +7,17 @@ use crate::src::Src;
 
 macros::ast! {
     pub struct Program {
-        pub statements: Vec<Node<Stmt>>,
+        pub statements: Vec<Node<Declaration>>,
+    }
+
+    pub enum Declaration {
+        //VarDecl{variable: String, expr: Node<Expr>},
+        Stmt(Node<Stmt>)
+    }
+
+    pub enum Stmt {
+        Expr(Node<Expr>),
+        Print(Option<Node<Expr>>),
     }
 
     pub enum Expr {
@@ -18,10 +28,5 @@ macros::ast! {
         Nil,
         Unary(UnaryOp, NodeRef<Expr>),
         BinOp(BinaryOp, NodeRef<Expr>, NodeRef<Expr>),
-    }
-
-    pub enum Stmt {
-        Expr(Node<Expr>),
-        Print(Option<Node<Expr>>),
     }
 }
