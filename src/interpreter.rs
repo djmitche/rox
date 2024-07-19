@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::ast::{self, parsed};
 use crate::error::Result;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Value {
     Nil,
     Bool(bool),
@@ -18,14 +18,19 @@ pub struct Interpreter {
 
 impl Interpreter {
     pub fn new() -> Self {
-        Self { globals: HashMap::new(), stack: Vec::new() }
+        Self {
+            globals: HashMap::new(),
+            stack: Vec::new(),
+        }
     }
 }
 impl parsed::Visitor for Interpreter {
     fn expr_end(&mut self, expr: &mut parsed::Expr) -> Result<()> {
         use parsed::Expr::*;
         match expr {
-            Variable(_) => todo!(),
+            Variable(n) => self
+                .stack
+                .push(self.globals.get(n).expect("undefined variable").clone()),
             String(s) => self.stack.push(Value::String(s.clone())),
             Number(n) => self.stack.push(Value::Number(n.parse().unwrap())),
             Boolean(b) => self.stack.push(Value::Bool(*b)),
@@ -72,10 +77,11 @@ impl parsed::Visitor for Interpreter {
     fn declaration_end(&mut self, stmt: &mut parsed::Declaration) -> Result<()> {
         use parsed::Declaration::*;
         match stmt {
-            Stmt(_) => { }
-            VarDecl{variable, ..} => {
+            Stmt(_) => {}
+            VarDecl { variable, .. } => {
                 // Expression has left its value on the stack.
-                self.globals.insert(variable.clone(), self.stack.pop().unwrap());
+                self.globals
+                    .insert(variable.clone(), self.stack.pop().unwrap());
             }
         }
         Ok(())
