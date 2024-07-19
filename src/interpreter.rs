@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::ast::{self, parsed};
 use crate::error::Result;
 
@@ -10,12 +12,13 @@ enum Value {
 }
 
 pub struct Interpreter {
+    globals: HashMap<String, Value>,
     stack: Vec<Value>,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
-        Self { stack: Vec::new() }
+        Self { globals: HashMap::new(), stack: Vec::new() }
     }
 }
 impl parsed::Visitor for Interpreter {
@@ -63,6 +66,18 @@ impl parsed::Visitor for Interpreter {
                 });
             }
         };
+        Ok(())
+    }
+
+    fn declaration_end(&mut self, stmt: &mut parsed::Declaration) -> Result<()> {
+        use parsed::Declaration::*;
+        match stmt {
+            Stmt(_) => { }
+            VarDecl{variable, ..} => {
+                // Expression has left its value on the stack.
+                self.globals.insert(variable.clone(), self.stack.pop().unwrap());
+            }
+        }
         Ok(())
     }
 

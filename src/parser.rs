@@ -26,6 +26,25 @@ impl<'p> Parser<'p> {
         Err(std::mem::take(&mut self.errors))
     }
 
+    /// Consume a single token of the given type or error out.
+    fn consume_token(
+        &mut self,
+        t: usize,
+        exp_ty: TokenType,
+    ) -> MultiResult<(usize, Option<Token>)> {
+        match self.tokens.get(t) {
+            Some(tok) if tok.ty == exp_ty => Ok((t + 1, Some(tok.clone()))),
+            Some(tok) => {
+                self.errors.add(Error::syntax(
+                    format!("Expected {:?}, got {:?}", exp_ty, tok),
+                    tok.src,
+                ));
+                Ok((t + 1, None))
+            }
+            None => self.unexpected_eof(),
+        }
+    }
+
     /// parse a primary (one-token) expression, or a parethesized expression.
     fn parse_primary(&mut self, t: usize) -> MultiResult<(usize, Node<Expr>)> {
         let Some(tok) = self.tokens.get(t) else {
@@ -208,9 +227,48 @@ impl<'p> Parser<'p> {
         Ok((t, stmt))
     }
 
-    fn parse_declaration(&mut self, t: usize) -> MultiResult<(usize, Node<Declaration>)> {
-        let (t, stmt) = self.parse_statement(t)?;
-        Ok((t, Declaration::stmt(stmt.src, stmt)))
+    fn parse_declaration(&mut self, mut t: usize) -> MultiResult<(usize, Node<Declaration>)> {
+        let Some(Token {
+            ty: TokenType::Var,
+            src: var_src,
+        }) = self.tokens.get(t)
+        else {
+            let (t, stmt) = self.parse_statement(t)?;
+            return Ok((t, Declaration::stmt(stmt.src, stmt)));
+        };
+        t += 1;
+
+        let (t, Some(ident_tok)) = self.consume_token(t, TokenType::Identifier)? else {
+            // Recover by assuming this is the start of a declaration.
+            // TODO: scan for `;`
+            return self.parse_declaration(t);
+        };
+        let ident_str: String = ident_tok.src_str(self.program).into();
+
+        // TODO: ( = <expr> ) should be optional.
+        let (t, Some(_)) = self.consume_token(t, TokenType::Equal)? else {
+            // Recover by assuming this is the start of a declaration.
+            // TODO: scan for `;`
+            return self.parse_declaration(t);
+        };
+        let (mut t, expr) = self.parse_expression(t)?;
+
+        let Some(semi_tok) = self.tokens.get(t) else {
+            return self.unexpected_eof();
+        };
+        if semi_tok.ty == TokenType::Semicolon {
+            t += 1;
+        } else {
+            self.errors.add(Error::syntax(
+                format!("Expected `;`, got {:?}", semi_tok.ty),
+                semi_tok.src,
+            ));
+            // Synchronize by assuming the `;` was present.
+        }
+        Ok((
+            t,
+            Declaration::vardecl(*var_src + semi_tok.src, ident_str, expr),
+        ))
     }
 
     fn parse_program(&mut self, mut t: usize) -> MultiResult<(usize, Node<Program>)> {
@@ -476,14 +534,31 @@ mod test {
     }
 
     #[test]
+    fn var_decl() -> MultiResult<()> {
+        assert_eq!(
+            parse("var x = 4;")?,
+            Program::new(
+                s(0, 10),
+                vec![Declaration::vardecl(
+                    s(0, 10),
+                    "x",
+                    Expr::number(s(8, 1), "4")
+                )]
+            )
+        );
+        Ok(())
+    }
+
+    #[test]
     fn program() -> MultiResult<()> {
         assert_eq!(
-            parse("3; print 4;")?,
+            parse("3; var y = 1; print 4;")?,
             Program::new(
-                s(0, 11),
+                s(0, 22),
                 vec![
                     Declaration::stmt(s(0, 2), Stmt::expr(s(0, 2), Expr::number(s(0, 1), "3"))),
-                    Declaration::stmt(s(3, 8), Stmt::print(s(3, 8), Expr::number(s(9, 1), "4"))),
+                    Declaration::vardecl(s(3, 10), "y", Expr::number(s(11, 1), "1")),
+                    Declaration::stmt(s(14, 8), Stmt::print(s(14, 8), Expr::number(s(20, 1), "4"))),
                 ]
             )
         );

@@ -11,7 +11,10 @@ macros::ast! {
     }
 
     pub enum Declaration {
-        //VarDecl{variable: String, expr: Node<Expr>},
+        VarDecl {
+            variable: String,
+            expr: Node<Expr>,
+        },
         Stmt(Node<Stmt>)
     }
 
