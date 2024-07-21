@@ -100,10 +100,15 @@ impl parsed::Visitor for Interpreter {
         use parsed::Declaration::*;
         match stmt {
             Stmt(_) => {}
-            VarDecl { variable, .. } => {
+            VarDecl { variable, expr } => {
+                let value = if expr.is_some() {
                 // Expression has left its value on the stack.
+                    self.stack.pop().unwrap()
+                } else {
+                    Value::Nil
+                };
                 self.environment
-                    .define(variable.clone(), self.stack.pop().unwrap());
+                    .define(variable.clone(), value);
             }
         }
         Ok(())

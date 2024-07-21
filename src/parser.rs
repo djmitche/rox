@@ -238,20 +238,24 @@ impl<'p> Parser<'p> {
         };
         t += 1;
 
-        let (t, Some(ident_tok)) = self.consume_token(t, TokenType::Identifier)? else {
+        let (mut t, Some(ident_tok)) = self.consume_token(t, TokenType::Identifier)? else {
             // Recover by assuming this is the start of a declaration.
             // TODO: scan for `;`
             return self.parse_declaration(t);
         };
         let ident_str: String = ident_tok.src_str(self.program).into();
 
-        // TODO: ( = <expr> ) should be optional.
-        let (t, Some(_)) = self.consume_token(t, TokenType::Equal)? else {
-            // Recover by assuming this is the start of a declaration.
-            // TODO: scan for `;`
-            return self.parse_declaration(t);
+        let Some(semi_or_eq_tok) = self.tokens.get(t) else {
+            return self.unexpected_eof();
         };
-        let (mut t, expr) = self.parse_expression(t)?;
+        let expr = if semi_or_eq_tok.ty == TokenType::Equal {
+            t += 1;
+            let expr_parse = self.parse_expression(t)?;
+            t = expr_parse.0;
+            Some(expr_parse.1)
+        } else {
+            None
+        };
 
         let Some(semi_tok) = self.tokens.get(t) else {
             return self.unexpected_eof();
@@ -543,6 +547,22 @@ mod test {
                     s(0, 10),
                     "x",
                     Expr::number(s(8, 1), "4")
+                )]
+            )
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn var_decl_nil() -> MultiResult<()> {
+        assert_eq!(
+            parse("var x;")?,
+            Program::new(
+                s(0, 6),
+                vec![Declaration::vardecl(
+                    s(0, 6),
+                    "x",
+                    None,
                 )]
             )
         );
