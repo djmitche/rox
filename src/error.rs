@@ -5,6 +5,8 @@ use thiserror::Error;
 pub enum Error {
     #[error("Syntax error: {0} at {1:?}")]
     SyntaxError(String, Src),
+    #[error("Runtime error: {0}")]
+    RuntimeError(String),
 }
 
 impl Error {

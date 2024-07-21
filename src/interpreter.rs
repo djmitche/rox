@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::ast::{self, parsed};
-use crate::error::Result;
+use crate::error::{Error, Result};
 
 #[derive(Debug, Clone)]
 enum Value {
@@ -11,15 +11,39 @@ enum Value {
     Number(f64),
 }
 
+struct Environment {
+    variables: HashMap<String, Value>,
+}
+
+impl Environment {
+    fn new() -> Self {
+        Self {
+            variables: HashMap::new(),
+        }
+    }
+
+    fn define(&mut self, name: impl Into<String>, value: Value) {
+        self.variables.insert(name.into(), value);
+    }
+
+    fn get(&self, name: impl AsRef<str>) -> Result<Value> {
+        let name = name.as_ref();
+        self.variables
+            .get(name)
+            .cloned()
+            .ok_or_else(|| Error::RuntimeError(format!("Undefined variable {name}")))
+    }
+}
+
 pub struct Interpreter {
-    globals: HashMap<String, Value>,
+    environment: Environment,
     stack: Vec<Value>,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
         Self {
-            globals: HashMap::new(),
+            environment: Environment::new(),
             stack: Vec::new(),
         }
     }
@@ -28,9 +52,7 @@ impl parsed::Visitor for Interpreter {
     fn expr_end(&mut self, expr: &mut parsed::Expr) -> Result<()> {
         use parsed::Expr::*;
         match expr {
-            Variable(n) => self
-                .stack
-                .push(self.globals.get(n).expect("undefined variable").clone()),
+            Variable(n) => self.stack.push(self.environment.get(n)?),
             String(s) => self.stack.push(Value::String(s.clone())),
             Number(n) => self.stack.push(Value::Number(n.parse().unwrap())),
             Boolean(b) => self.stack.push(Value::Bool(*b)),
@@ -80,8 +102,8 @@ impl parsed::Visitor for Interpreter {
             Stmt(_) => {}
             VarDecl { variable, .. } => {
                 // Expression has left its value on the stack.
-                self.globals
-                    .insert(variable.clone(), self.stack.pop().unwrap());
+                self.environment
+                    .define(variable.clone(), self.stack.pop().unwrap());
             }
         }
         Ok(())
