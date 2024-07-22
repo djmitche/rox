@@ -1,5 +1,6 @@
  print 1 + (2*8);
  var y;
  var x = "cruel world!";
+ x = x + " rly";
  print "hello" + " " + x;
  print y;

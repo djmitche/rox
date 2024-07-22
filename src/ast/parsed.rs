@@ -29,6 +29,7 @@ macros::ast! {
         Number(String),
         Boolean(bool),
         Nil,
+        Assignment(String, NodeRef<Expr>),
         Unary(UnaryOp, NodeRef<Expr>),
         BinOp(BinaryOp, NodeRef<Expr>, NodeRef<Expr>),
     }

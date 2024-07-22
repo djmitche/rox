@@ -45,6 +45,14 @@ impl<'p> Parser<'p> {
         }
     }
 
+    /// Peek at the next token, if it has the given token type.
+    fn peek_token(&mut self, t: usize, exp_ty: TokenType) -> Option<Token> {
+        match self.tokens.get(t) {
+            Some(tok @ Token { ty, .. }) if *ty == exp_ty => Some(tok.clone()),
+            _ => None,
+        }
+    }
+
     /// parse a primary (one-token) expression, or a parethesized expression.
     fn parse_primary(&mut self, t: usize) -> MultiResult<(usize, Node<Expr>)> {
         let Some(tok) = self.tokens.get(t) else {
@@ -195,18 +203,33 @@ impl<'p> Parser<'p> {
         }
     }
 
+    fn parse_assignment(&mut self, t: usize) -> MultiResult<(usize, Node<Expr>)> {
+        let (mut t, lvalue) = self.parse_equality(t)?;
+        if self.peek_token(t, TokenType::Equal).is_none() {
+            // Not an assignment, so just return the equality.
+            return Ok((t, lvalue));
+        };
+        t += 1;
+        let Expr::Variable(name) = lvalue.inner else {
+            self.errors.add(Error::syntax(
+                format!("Assignment lvalue must be an identifier, got {:?}", lvalue),
+                lvalue.src,
+            ));
+            // TODO: Synchronize to ;
+            return self.parse_assignment(t);
+        };
+        let (t, rvalue) = self.parse_assignment(t)?;
+        Ok((t, Expr::assignment(lvalue.src + rvalue.src, name, rvalue)))
+    }
+
     fn parse_expression(&mut self, t: usize) -> MultiResult<(usize, Node<Expr>)> {
-        self.parse_equality(t)
+        self.parse_assignment(t)
     }
 
     fn parse_statement(&mut self, t: usize) -> MultiResult<(usize, Node<Stmt>)> {
-        let (mut t, mut stmt) = if let Some(Token {
-            ty: TokenType::Print,
-            src,
-        }) = self.tokens.get(t)
-        {
+        let (mut t, mut stmt) = if let Some(tok) = self.peek_token(t, TokenType::Print) {
             let (t, expr) = self.parse_expression(t + 1)?;
-            (t, Stmt::print(*src + expr.src, expr))
+            (t, Stmt::print(tok.src + expr.src, expr))
         } else {
             let (t, expr) = self.parse_expression(t)?;
             (t, Stmt::expr(expr.src, expr))
@@ -240,7 +263,6 @@ impl<'p> Parser<'p> {
 
         let (mut t, Some(ident_tok)) = self.consume_token(t, TokenType::Identifier)? else {
             // Recover by assuming this is the start of a declaration.
-            // TODO: scan for `;`
             return self.parse_declaration(t);
         };
         let ident_str: String = ident_tok.src_str(self.program).into();
@@ -557,14 +579,7 @@ mod test {
     fn var_decl_nil() -> MultiResult<()> {
         assert_eq!(
             parse("var x;")?,
-            Program::new(
-                s(0, 6),
-                vec![Declaration::vardecl(
-                    s(0, 6),
-                    "x",
-                    None,
-                )]
-            )
+            Program::new(s(0, 6), vec![Declaration::vardecl(s(0, 6), "x", None,)])
         );
         Ok(())
     }

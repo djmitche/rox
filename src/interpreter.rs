@@ -1,3 +1,4 @@
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 
 use crate::ast::{self, parsed};
@@ -24,6 +25,17 @@ impl Environment {
 
     fn define(&mut self, name: impl Into<String>, value: Value) {
         self.variables.insert(name.into(), value);
+    }
+
+    fn assign(&mut self, name: impl Into<String>, value: Value) -> Result<()> {
+        let entry = self.variables.entry(name.into());
+        let Entry::Occupied(mut entry) = entry else {
+            let name = entry.key();
+            return Err(Error::RuntimeError(format!("Undefined variable {name}")));
+        };
+
+        entry.insert(value);
+        Ok(())
     }
 
     fn get(&self, name: impl AsRef<str>) -> Result<Value> {
@@ -57,6 +69,10 @@ impl parsed::Visitor for Interpreter {
             Number(n) => self.stack.push(Value::Number(n.parse().unwrap())),
             Boolean(b) => self.stack.push(Value::Bool(*b)),
             Nil => self.stack.push(Value::Nil),
+            Assignment(name, _) => {
+                self.environment
+                    .assign(name.clone(), self.stack.pop().unwrap())?;
+            }
             Unary(op, _) => {
                 let v = self.stack.pop().unwrap();
                 self.stack.push(match (op, v) {
@@ -102,13 +118,12 @@ impl parsed::Visitor for Interpreter {
             Stmt(_) => {}
             VarDecl { variable, expr } => {
                 let value = if expr.is_some() {
-                // Expression has left its value on the stack.
+                    // Expression has left its value on the stack.
                     self.stack.pop().unwrap()
                 } else {
                     Value::Nil
                 };
-                self.environment
-                    .define(variable.clone(), value);
+                self.environment.define(variable.clone(), value);
             }
         }
         Ok(())
