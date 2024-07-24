@@ -13,21 +13,36 @@ enum Value {
 }
 
 struct Environment {
+    parent: Option<Box<Environment>>,
     variables: HashMap<String, Value>,
 }
 
 impl Environment {
-    fn new() -> Self {
-        Self {
+    fn new() -> Box<Self> {
+        Box::new(Self {
+            parent: None,
             variables: HashMap::new(),
-        }
+        })
+    }
+
+    fn push(self: Box<Self>) -> Box<Self> {
+        Box::new(Self {
+            parent: Some(self),
+            variables: HashMap::new(),
+        })
+    }
+
+    fn pop(self: Box<Self>) -> Option<Box<Self>> {
+        self.parent
     }
 
     fn define(&mut self, name: impl Into<String>, value: Value) {
+        // TODO
         self.variables.insert(name.into(), value);
     }
 
     fn assign(&mut self, name: impl Into<String>, value: Value) -> Result<()> {
+        // TODO
         let entry = self.variables.entry(name.into());
         let Entry::Occupied(mut entry) = entry else {
             let name = entry.key();
@@ -39,6 +54,7 @@ impl Environment {
     }
 
     fn get(&self, name: impl AsRef<str>) -> Result<Value> {
+        // TODO
         let name = name.as_ref();
         self.variables
             .get(name)
@@ -48,7 +64,7 @@ impl Environment {
 }
 
 pub struct Interpreter {
-    environment: Environment,
+    environment: Box<Environment>,
     stack: Vec<Value>,
 }
 
