@@ -1,67 +1,10 @@
-use std::collections::hash_map::Entry;
-use std::collections::HashMap;
+mod value;
+mod environment;
 
 use crate::ast::{self, parsed};
-use crate::error::{Error, Result};
-
-#[derive(Debug, Clone)]
-enum Value {
-    Nil,
-    Bool(bool),
-    String(String),
-    Number(f64),
-}
-
-struct Environment {
-    parent: Option<Box<Environment>>,
-    variables: HashMap<String, Value>,
-}
-
-impl Environment {
-    fn new() -> Box<Self> {
-        Box::new(Self {
-            parent: None,
-            variables: HashMap::new(),
-        })
-    }
-
-    fn push(self: Box<Self>) -> Box<Self> {
-        Box::new(Self {
-            parent: Some(self),
-            variables: HashMap::new(),
-        })
-    }
-
-    fn pop(self: Box<Self>) -> Option<Box<Self>> {
-        self.parent
-    }
-
-    fn define(&mut self, name: impl Into<String>, value: Value) {
-        // TODO
-        self.variables.insert(name.into(), value);
-    }
-
-    fn assign(&mut self, name: impl Into<String>, value: Value) -> Result<()> {
-        // TODO
-        let entry = self.variables.entry(name.into());
-        let Entry::Occupied(mut entry) = entry else {
-            let name = entry.key();
-            return Err(Error::RuntimeError(format!("Undefined variable {name}")));
-        };
-
-        entry.insert(value);
-        Ok(())
-    }
-
-    fn get(&self, name: impl AsRef<str>) -> Result<Value> {
-        // TODO
-        let name = name.as_ref();
-        self.variables
-            .get(name)
-            .cloned()
-            .ok_or_else(|| Error::RuntimeError(format!("Undefined variable {name}")))
-    }
-}
+use crate::error::Result;
+use environment::Environment;
+use value::Value;
 
 pub struct Interpreter {
     environment: Box<Environment>,
