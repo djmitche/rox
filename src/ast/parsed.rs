@@ -20,6 +20,7 @@ macros::ast! {
 
     pub enum Stmt {
         Expr(Node<Expr>),
+        Block(Vec<Node<Declaration>>),
         Print(Option<Node<Expr>>),
     }
 

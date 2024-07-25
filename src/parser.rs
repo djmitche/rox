@@ -226,10 +226,34 @@ impl<'p> Parser<'p> {
         self.parse_assignment(t)
     }
 
+    fn parse_block(&mut self, mut t: usize) -> MultiResult<(usize, Node<Stmt>)> {
+        let mut declarations = Vec::new();
+        let offset = self.tokens.get(t).map(|tok| tok.src.offset).unwrap_or(0);
+        let mut src = Src { offset, len: 0 };
+        while self.peek_token(t, TokenType::RightBrace).is_none() {
+            let decl;
+            (t, decl) = self.parse_declaration(t)?;
+            src += decl.src;
+            declarations.push(decl);
+        }
+        if let (_, Some(rbrace_tok)) = self.consume_token(t, TokenType::RightBrace).unwrap() {
+            t += 1;
+            src += rbrace_tok.src;
+        } else {
+            self.errors
+                .add(Error::syntax("Expected `}}`, got eof", src));
+        }
+        Ok((t, Stmt::block(src, declarations)))
+    }
+
     fn parse_statement(&mut self, t: usize) -> MultiResult<(usize, Node<Stmt>)> {
         let (mut t, mut stmt) = if let Some(tok) = self.peek_token(t, TokenType::Print) {
             let (t, expr) = self.parse_expression(t + 1)?;
             (t, Stmt::print(tok.src + expr.src, expr))
+        } else if let Some(tok) = self.peek_token(t, TokenType::LeftBrace) {
+            let (t, mut decls) = self.parse_block(t + 1)?;
+            decls.src += tok.src;
+            return Ok((t, decls));
         } else {
             let (t, expr) = self.parse_expression(t)?;
             (t, Stmt::expr(expr.src, expr))
@@ -580,6 +604,37 @@ mod test {
         assert_eq!(
             parse("var x;")?,
             Program::new(s(0, 6), vec![Declaration::vardecl(s(0, 6), "x", None,)])
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn block() -> MultiResult<()> {
+        assert_eq!(
+            parse("1; {2; 3;} 4;")?,
+            Program::new(
+                s(0, 13),
+                vec![
+                    Declaration::stmt(s(0, 2), Stmt::expr(s(0, 2), Expr::number(s(0, 1), "1"))),
+                    Declaration::stmt(
+                        s(3, 7),
+                        Stmt::block(
+                            s(3, 7),
+                            [
+                                Declaration::stmt(
+                                    s(4, 2),
+                                    Stmt::expr(s(4, 2), Expr::number(s(4, 1), "2"))
+                                ),
+                                Declaration::stmt(
+                                    s(7, 2),
+                                    Stmt::expr(s(7, 2), Expr::number(s(7, 1), "3"))
+                                ),
+                            ]
+                        )
+                    ),
+                    Declaration::stmt(s(11, 2), Stmt::expr(s(11, 2), Expr::number(s(11, 1), "4"))),
+                ]
+            )
         );
         Ok(())
     }

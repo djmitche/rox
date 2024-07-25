@@ -1,13 +1,15 @@
 mod value;
 mod environment;
 
+use std::rc::Rc;
+
 use crate::ast::{self, parsed};
 use crate::error::Result;
 use environment::Environment;
 use value::Value;
 
 pub struct Interpreter {
-    environment: Box<Environment>,
+    environment: Rc<Environment>,
     stack: Vec<Value>,
 }
 
@@ -88,12 +90,27 @@ impl parsed::Visitor for Interpreter {
         Ok(())
     }
 
+    fn stmt_start(&mut self, stmt: &mut parsed::Stmt) -> Result<bool> {
+        use parsed::Stmt::*;
+        #[allow(clippy::single_match)]
+        match stmt {
+            Block(_) => {
+                self.environment = self.environment.new_child();
+            }
+            _ => {},
+        }
+        Ok(true)
+    }
+
     fn stmt_end(&mut self, stmt: &mut parsed::Stmt) -> Result<()> {
         use parsed::Stmt::*;
         match stmt {
             Expr(_) => {
                 // Expression statement discards its result.
                 self.stack.pop();
+            }
+            Block(_) => {
+                self.environment = self.environment.parent().unwrap();
             }
             Print(_) => {
                 println!("{:?}", self.stack.pop().unwrap());

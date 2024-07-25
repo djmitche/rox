@@ -1,42 +1,46 @@
 use crate::error::{Error, Result};
 use crate::interpreter::value::Value;
+use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 pub(super) struct Environment {
-    parent: Option<Box<Environment>>,
-    variables: HashMap<String, Value>,
+    parent: Option<Rc<Environment>>,
+    variables: RefCell<HashMap<String, Value>>,
 }
 
 impl Environment {
-    pub fn new() -> Box<Self> {
-        Box::new(Self {
+    pub fn new() -> Rc<Self> {
+        Rc::new(Self {
             parent: None,
-            variables: HashMap::new(),
+            variables: RefCell::new(HashMap::new()),
         })
     }
 
-    pub fn push(self: Box<Self>) -> Box<Self> {
-        Box::new(Self {
-            parent: Some(self),
-            variables: HashMap::new(),
+    pub fn new_child(self: &Rc<Self>) -> Rc<Self> {
+        Rc::new(Self {
+            parent: Some(self.clone()),
+            variables: RefCell::new(HashMap::new()),
         })
     }
 
-    pub fn pop(self: Box<Self>) -> Option<Box<Self>> {
-        self.parent
+    pub fn parent(self: &Rc<Self>) -> Option<Rc<Self>> {
+        self.parent.clone()
     }
 
-    pub fn define(&mut self, name: impl Into<String>, value: Value) {
-        // TODO
-        self.variables.insert(name.into(), value);
+    pub fn define(&self, name: impl Into<String>, value: Value) {
+        self.variables.borrow_mut().insert(name.into(), value);
     }
 
-    pub fn assign(&mut self, name: impl Into<String>, value: Value) -> Result<()> {
-        // TODO
-        let entry = self.variables.entry(name.into());
+    pub fn assign(&self, name: impl AsRef<str>, value: Value) -> Result<()> {
+        let name = name.as_ref();
+        let mut variables = self.variables.borrow_mut();
+        let entry = variables.entry(name.to_string());
         let Entry::Occupied(mut entry) = entry else {
-            let name = entry.key();
+            if let Some(parent) = &self.parent {
+                return parent.assign(name, value);
+            }
             return Err(Error::RuntimeError(format!("Undefined variable {name}")));
         };
 
@@ -46,7 +50,7 @@ impl Environment {
 
     pub fn get(&self, name: impl AsRef<str>) -> Result<Value> {
         let name = name.as_ref();
-        if let Some(v) = self.variables.get(name) {
+        if let Some(v) = self.variables.borrow().get(name) {
             Ok(v.clone())
         } else if let Some(p) = &self.parent {
             p.get(name)
@@ -62,24 +66,39 @@ mod test {
 
     #[test]
     fn stack() {
-        let mut e = Environment::new();
+        let e = Environment::new();
         e.define("foo", Value::Bool(true));
-        let e = e.push();
-        let e = e.pop().unwrap();
+        let e = e.new_child();
+        let e = e.parent().unwrap();
         assert_eq!(e.get("foo").unwrap(), Value::Bool(true));
-        assert!(e.pop().is_none());
+        assert!(e.parent().is_none());
     }
 
     #[test]
     fn get_inherited() {
-        let mut e = Environment::new();
+        let e = Environment::new();
         e.define("foo", Value::Bool(true));
         e.define("bar", Value::Bool(false));
-        let mut e = e.push();
+        let e = e.new_child();
         e.define("foo", Value::Bool(false));
         assert_eq!(e.get("foo").unwrap(), Value::Bool(false));
         assert_eq!(e.get("bar").unwrap(), Value::Bool(false));
-        let e = e.pop().unwrap();
+        let e = e.parent().unwrap();
         assert_eq!(e.get("foo").unwrap(), Value::Bool(true));
+    }
+
+    #[test]
+    fn assign_inherited() {
+        let e = Environment::new();
+        e.define("outer", Value::Bool(false));
+        let e = e.new_child();
+        e.define("inner", Value::Bool(false));
+        e.assign("outer", Value::Bool(true)).unwrap();
+        e.assign("inner", Value::Bool(true)).unwrap();
+        assert_eq!(e.get("outer").unwrap(), Value::Bool(true));
+        assert_eq!(e.get("inner").unwrap(), Value::Bool(true));
+        let e = e.parent().unwrap();
+        assert_eq!(e.get("outer").unwrap(), Value::Bool(true));
+        assert!(e.get("inner").is_err());
     }
 }
