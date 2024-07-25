@@ -246,14 +246,53 @@ impl<'p> Parser<'p> {
         Ok((t, Stmt::block(src, declarations)))
     }
 
+    fn parse_if(&mut self, t: usize) -> MultiResult<(usize, Node<Stmt>)> {
+        let (_, Some(lparen_tok)) = self.consume_token(t, TokenType::LeftParen)? else {
+            return self.unexpected_eof();
+        };
+        let mut src = lparen_tok.src;
+        let (t, condition) = self.parse_parenthesized(t)?;
+
+        let (t, Some(lbrace_tok)) = self.consume_token(t, TokenType::LeftBrace)? else {
+            return self.unexpected_eof();
+        };
+
+        let (t, mut consequent) = self.parse_block(t)?;
+        consequent.src += lbrace_tok.src;
+        src += consequent.src;
+
+        if self.peek_token(t, TokenType::Else).is_none() {
+            // No alternate..
+            return Ok((t, Stmt::conditional(src, condition, consequent, None)));
+        };
+        let t = t + 1;
+
+        let (t, Some(lbrace_tok)) = self.consume_token(t, TokenType::LeftBrace)? else {
+            return self.unexpected_eof();
+        };
+
+        let (t, mut alternate) = self.parse_block(t)?;
+        alternate.src += lbrace_tok.src;
+        src += alternate.src;
+
+        Ok((
+            t,
+            Stmt::conditional(src, condition, consequent, Some(alternate.into())),
+        ))
+    }
+
     fn parse_statement(&mut self, t: usize) -> MultiResult<(usize, Node<Stmt>)> {
         let (mut t, mut stmt) = if let Some(tok) = self.peek_token(t, TokenType::Print) {
             let (t, expr) = self.parse_expression(t + 1)?;
             (t, Stmt::print(tok.src + expr.src, expr))
+        } else if let Some(tok) = self.peek_token(t, TokenType::If) {
+            let (t, mut stmt) = self.parse_if(t + 1)?;
+            stmt.src += tok.src;
+            return Ok((t, stmt));
         } else if let Some(tok) = self.peek_token(t, TokenType::LeftBrace) {
-            let (t, mut decls) = self.parse_block(t + 1)?;
-            decls.src += tok.src;
-            return Ok((t, decls));
+            let (t, mut stmt) = self.parse_block(t + 1)?;
+            stmt.src += tok.src;
+            return Ok((t, stmt));
         } else {
             let (t, expr) = self.parse_expression(t)?;
             (t, Stmt::expr(expr.src, expr))

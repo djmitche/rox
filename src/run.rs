@@ -6,7 +6,7 @@ use std::io::{self, BufRead};
 
 /// Run the given data as a rox program.
 fn run(program: impl AsRef<str>) -> MultiResult<()> {
-    let mut ast = dbg!(parse(program.as_ref())?);
+    let mut ast = parse(program.as_ref())?;
     ast.traverse(&mut Interpreter::new())
         .map_err(|e| Errors::from_error("interpreter", e))?;
     Ok(())

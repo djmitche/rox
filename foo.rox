@@ -3,6 +3,11 @@
  {
  var x = "cruel world!";
  x = x + " rly";
+ if (y < 10) {
+ 	print "big";
+	} else {
+	print "small";
+	}
  y = 30;
  var y = 10;
  print "hello" + " " + x;

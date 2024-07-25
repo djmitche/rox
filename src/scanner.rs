@@ -240,7 +240,7 @@ mod test {
     /// the first and last tokens are represented as `(Identifier, "a")`, and the assertion would
     /// pass even if both are slices of the first occurrence of `a` in the program.
     fn scan_result(program: &str) -> Vec<(TokenType, &str)> {
-        let tokens = scan(dbg!(program)).unwrap();
+        let tokens = scan(program).unwrap();
         tokens
             .into_iter()
             .map(|token| (token.ty, token.src_str(program)))

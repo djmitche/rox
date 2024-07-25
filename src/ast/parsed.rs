@@ -22,6 +22,11 @@ macros::ast! {
         Expr(Node<Expr>),
         Block(Vec<Node<Declaration>>),
         Print(Option<Node<Expr>>),
+        Conditional{
+            condition: Node<Expr>,
+            consequent: NodeRef<Stmt>,
+            alternate: Option<NodeRef<Stmt>>,
+        },
     }
 
     pub enum Expr {

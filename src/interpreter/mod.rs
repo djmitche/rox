@@ -1,5 +1,5 @@
-mod value;
 mod environment;
+mod value;
 
 use std::rc::Rc;
 
@@ -37,7 +37,7 @@ impl parsed::Visitor for Interpreter {
             Unary(op, _) => {
                 let v = self.stack.pop().unwrap();
                 self.stack.push(match (op, v) {
-                    (ast::UnaryOp::Not, Value::Bool(b)) => Value::Bool(!b),
+                    (ast::UnaryOp::Not, v) => Value::Bool(!v.is_truthy()),
                     (ast::UnaryOp::Neg, Value::Number(n)) => Value::Number(-n),
                     _ => panic!("invalid unary"),
                 });
@@ -90,32 +90,44 @@ impl parsed::Visitor for Interpreter {
         Ok(())
     }
 
-    fn stmt_start(&mut self, stmt: &mut parsed::Stmt) -> Result<bool> {
-        use parsed::Stmt::*;
-        #[allow(clippy::single_match)]
-        match stmt {
-            Block(_) => {
-                self.environment = self.environment.new_child();
-            }
-            _ => {},
-        }
-        Ok(true)
-    }
-
-    fn stmt_end(&mut self, stmt: &mut parsed::Stmt) -> Result<()> {
-        use parsed::Stmt::*;
-        match stmt {
-            Expr(_) => {
-                // Expression statement discards its result.
+    fn stmt_recurse(&mut self, val: &mut parsed::Stmt) -> crate::error::Result<()> {
+        #[allow(unused_variables, unreachable_patterns)]
+        match val {
+            parsed::Stmt::Expr(v0) => {
+                v0.traverse(self)?;
+                // Discard the result of the expression.
                 self.stack.pop();
             }
-            Block(_) => {
+            parsed::Stmt::Block(v0) => {
+                self.environment = self.environment.new_child();
+                for v in v0 {
+                    v.traverse(self)?;
+                }
                 self.environment = self.environment.parent().unwrap();
             }
-            Print(_) => {
-                println!("{:?}", self.stack.pop().unwrap());
+            parsed::Stmt::Print(v0) => {
+                if let Some(v) = v0 {
+                    v.traverse(self)?;
+                    println!("{:?}", self.stack.pop().unwrap());
+                } else {
+                    println!();
+                }
             }
-        }
+            parsed::Stmt::Conditional {
+                condition,
+                consequent,
+                alternate,
+            } => {
+                // The condition expression will leave a value on the stack.
+                condition.traverse(self)?;
+                if self.stack.pop().unwrap().is_truthy() {
+                    consequent.traverse(self)?;
+                } else if let Some(v) = alternate {
+                    v.traverse(self)?;
+                }
+            }
+            _ => {}
+        };
         Ok(())
     }
 }
