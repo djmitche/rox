@@ -1,6 +1,6 @@
 #![allow(unused_imports, dead_code)]
 use crate::ast::parsed::{Declaration, Expr, Program, Stmt};
-use crate::ast::{BinaryOp, Node, NodeRef, UnaryOp};
+use crate::ast::{BinaryOp, LogicalOp, Node, NodeRef, UnaryOp};
 use crate::error::{Error, Errors, MultiResult, Result};
 use crate::scanner::scan;
 use crate::src::Src;
@@ -203,8 +203,51 @@ impl<'p> Parser<'p> {
         }
     }
 
+    fn parse_logic_and(&mut self, t: usize) -> MultiResult<(usize, Node<Expr>)> {
+        let (mut t, mut value) = self.parse_equality(t)?;
+        loop {
+            let Some(Token {
+                ty: TokenType::And, ..
+            }) = self.tokens.get(t)
+            else {
+                return Ok((t, value));
+            };
+            t += 1;
+            let rhs;
+            (t, rhs) = self.parse_equality(t)?;
+            value = Expr::logop(
+                value.src + rhs.src,
+                LogicalOp::And,
+                Box::new(value),
+                Box::new(rhs),
+            );
+        }
+    }
+
+
+    fn parse_logic_or(&mut self, t: usize) -> MultiResult<(usize, Node<Expr>)> {
+        let (mut t, mut value) = self.parse_logic_and(t)?;
+        loop {
+            let Some(Token {
+                ty: TokenType::Or, ..
+            }) = self.tokens.get(t)
+            else {
+                return Ok((t, value));
+            };
+            t += 1;
+            let rhs;
+            (t, rhs) = self.parse_logic_and(t)?;
+            value = Expr::logop(
+                value.src + rhs.src,
+                LogicalOp::Or,
+                Box::new(value),
+                Box::new(rhs),
+            );
+        }
+    }
+
     fn parse_assignment(&mut self, t: usize) -> MultiResult<(usize, Node<Expr>)> {
-        let (mut t, lvalue) = self.parse_equality(t)?;
+        let (mut t, lvalue) = self.parse_logic_or(t)?;
         if self.peek_token(t, TokenType::Equal).is_none() {
             // Not an assignment, so just return the equality.
             return Ok((t, lvalue));
@@ -555,6 +598,34 @@ mod test {
                     Expr::number(s(3, 1), "1"),
                     Expr::number(s(6, 1), "2")
                 )
+            ))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn logical_and() -> MultiResult<()> {
+        assert_eq!(
+            parse("true and false;")?,
+            prog(Expr::logop(
+                s(0, 14),
+                LogicalOp::And,
+                Expr::boolean(s(0, 4), true),
+                Expr::boolean(s(9, 5), false),
+            ))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn logical_or() -> MultiResult<()> {
+        assert_eq!(
+            parse("true or false;")?,
+            prog(Expr::logop(
+                s(0, 13),
+                LogicalOp::Or,
+                Expr::boolean(s(0, 4), true),
+                Expr::boolean(s(8, 5), false),
             ))
         );
         Ok(())

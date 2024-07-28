@@ -22,6 +22,39 @@ impl Interpreter {
     }
 }
 impl parsed::Visitor for Interpreter {
+    fn expr_recurse(&mut self, val: &mut parsed::Expr) -> crate::error::Result<()> {
+        #[allow(unused_variables, unreachable_patterns)]
+        match val {
+            parsed::Expr::Assignment(v0, v1) => {
+                v1.traverse(self)?;
+            }
+            parsed::Expr::Unary(v0, v1) => {
+                v1.traverse(self)?;
+            }
+            parsed::Expr::BinOp(v0, v1, v2) => {
+                v1.traverse(self)?;
+                v2.traverse(self)?;
+            }
+            parsed::Expr::LogOp(op, lhs, rhs) => {
+                lhs.traverse(self)?;
+                let lhs_val = self.stack.last().unwrap();
+                // Short-circuit appropriately, leaving the lhs val on the stack
+                // if it is enough.
+                match (op, lhs_val.is_truthy()) {
+                    (ast::LogicalOp::And, false) | (ast::LogicalOp::Or, true) => {
+                        return Ok(());
+                    }
+                    _ => {
+                        self.stack.pop().unwrap();
+                        rhs.traverse(self)?;
+                    }
+                }
+            }
+            _ => {}
+        };
+        Ok(())
+    }
+
     fn expr_end(&mut self, expr: &mut parsed::Expr) -> Result<()> {
         use parsed::Expr::*;
         match expr {
@@ -68,6 +101,9 @@ impl parsed::Visitor for Interpreter {
                     },
                     _ => panic!("invalid binary op"),
                 });
+            }
+            LogOp(_, _, _) => {
+                // LogOp is handled in expr_recurse.
             }
         };
         Ok(())

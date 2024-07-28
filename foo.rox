@@ -3,7 +3,7 @@
  {
  var x = "cruel world!";
  x = x + " rly";
- if (y < 10) {
+ if (y > 10 and y < 30) {
  	print "big";
 	} else {
 	print "small";

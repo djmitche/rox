@@ -1,7 +1,7 @@
 //! AST representation of a parsed Rox program.
 #![allow(dead_code)]
 use crate::ast::node::{Node, NodeRef};
-use crate::ast::ops::{BinaryOp, UnaryOp};
+use crate::ast::ops::{BinaryOp, UnaryOp, LogicalOp};
 use crate::error::Result;
 use crate::src::Src;
 
@@ -38,5 +38,6 @@ macros::ast! {
         Assignment(String, NodeRef<Expr>),
         Unary(UnaryOp, NodeRef<Expr>),
         BinOp(BinaryOp, NodeRef<Expr>, NodeRef<Expr>),
+        LogOp(LogicalOp, NodeRef<Expr>, NodeRef<Expr>),
     }
 }

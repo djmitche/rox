@@ -47,3 +47,20 @@ impl TryFrom<TokenType> for BinaryOp {
         })
     }
 }
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum LogicalOp {
+    And,
+    Or,
+}
+
+impl TryFrom<TokenType> for LogicalOp {
+    type Error = ();
+    fn try_from(ty: TokenType) -> Result<Self, Self::Error> {
+        Ok(match ty {
+            TokenType::And => LogicalOp::And,
+            TokenType::Or => LogicalOp::Or,
+            _ => return Err(()),
+        })
+    }
+}
