@@ -1,15 +1,18 @@
  print 1 + (2*8);
  var y = 20;
  {
- var x = "cruel world!";
- x = x + " rly";
- if (y > 10 and y < 30) {
- 	print "big";
-	} else {
-	print "small";
-	}
- y = 30;
- var y = 10;
- print "hello" + " " + x;
+	 var x = "cruel world!";
+	 x = x + " rly";
+	 if (y > 10 and y < 30) {
+		print "big";
+		} else {
+		print "small";
+		}
+	 y = 30;
+	 var y = 10;
+	 while (y > 5) {
+		 print "hello" + " " + x;
+		 y = y - 1;
+	 }
  }
  print y;

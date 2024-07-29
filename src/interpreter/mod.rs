@@ -162,6 +162,16 @@ impl parsed::Visitor for Interpreter {
                     v.traverse(self)?;
                 }
             }
+            parsed::Stmt::Looop { precondition, body } => {
+                loop {
+                    // The condition expression will leave a value on the stack.
+                    precondition.traverse(self)?;
+                    if !self.stack.pop().unwrap().is_truthy() {
+                        break;
+                    }
+                    body.traverse(self)?;
+                }
+            }
             _ => {}
         };
         Ok(())

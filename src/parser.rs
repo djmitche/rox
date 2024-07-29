@@ -53,6 +53,8 @@ impl<'p> Parser<'p> {
         }
     }
 
+    // --- parsers
+
     /// parse a primary (one-token) expression, or a parethesized expression.
     fn parse_primary(&mut self, t: usize) -> MultiResult<(usize, Node<Expr>)> {
         let Some(tok) = self.tokens.get(t) else {
@@ -324,12 +326,34 @@ impl<'p> Parser<'p> {
         ))
     }
 
+    fn parse_while(&mut self, t: usize) -> MultiResult<(usize, Node<Stmt>)> {
+        let (_, Some(lparen_tok)) = self.consume_token(t, TokenType::LeftParen)? else {
+            return self.unexpected_eof();
+        };
+        let mut src = lparen_tok.src;
+        let (t, precondition) = self.parse_parenthesized(t)?;
+
+        let (t, Some(lbrace_tok)) = self.consume_token(t, TokenType::LeftBrace)? else {
+            return self.unexpected_eof();
+        };
+
+        let (t, mut body) = self.parse_block(t)?;
+        body.src += lbrace_tok.src;
+        src += body.src;
+
+        Ok((t, Stmt::looop(src, precondition, body)))
+    }
+
     fn parse_statement(&mut self, t: usize) -> MultiResult<(usize, Node<Stmt>)> {
         let (mut t, mut stmt) = if let Some(tok) = self.peek_token(t, TokenType::Print) {
             let (t, expr) = self.parse_expression(t + 1)?;
             (t, Stmt::print(tok.src + expr.src, expr))
         } else if let Some(tok) = self.peek_token(t, TokenType::If) {
             let (t, mut stmt) = self.parse_if(t + 1)?;
+            stmt.src += tok.src;
+            return Ok((t, stmt));
+        } else if let Some(tok) = self.peek_token(t, TokenType::While) {
+            let (t, mut stmt) = self.parse_while(t + 1)?;
             stmt.src += tok.src;
             return Ok((t, stmt));
         } else if let Some(tok) = self.peek_token(t, TokenType::LeftBrace) {
