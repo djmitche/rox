@@ -27,8 +27,7 @@ macros::ast! {
             consequent: NodeRef<Stmt>,
             alternate: Option<NodeRef<Stmt>>,
         },
-        // TODO: use identifier literals in macro so `Loop` is OK
-        Looop {
+        Loop {
             precondition: Node<Expr>,
             body: NodeRef<Stmt>,
         },

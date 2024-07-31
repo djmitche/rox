@@ -341,7 +341,7 @@ impl<'p> Parser<'p> {
         body.src += lbrace_tok.src;
         src += body.src;
 
-        Ok((t, Stmt::looop(src, precondition, body)))
+        Ok((t, Stmt::r#loop(src, precondition, body)))
     }
 
     fn parse_statement(&mut self, t: usize) -> MultiResult<(usize, Node<Stmt>)> {

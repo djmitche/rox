@@ -220,7 +220,7 @@ impl AstGenerator {
 
         for variant in &item.variants {
             let var_name = &variant.ident;
-            let constr_name = lowercase(var_name);
+            let constr_name = quote::format_ident!("r#{}", lowercase(var_name));
 
             let recurse_body = recurse_for_fields(&variant.fields, |ident| quote! { #ident })?;
 
