@@ -226,7 +226,6 @@ impl<'p> Parser<'p> {
         }
     }
 
-
     fn parse_logic_or(&mut self, t: usize) -> MultiResult<(usize, Node<Expr>)> {
         let (mut t, mut value) = self.parse_logic_and(t)?;
         loop {
@@ -341,7 +340,74 @@ impl<'p> Parser<'p> {
         body.src += lbrace_tok.src;
         src += body.src;
 
-        Ok((t, Stmt::r#loop(src, precondition, body)))
+        Ok((t, Stmt::r#while(src, precondition, body)))
+    }
+
+    fn parse_for(&mut self, t: usize) -> MultiResult<(usize, Node<Stmt>)> {
+        let (t, Some(lparen_tok)) = self.consume_token(t, TokenType::LeftParen)? else {
+            return self.unexpected_eof();
+        };
+        let mut src = lparen_tok.src;
+
+        // Parse the initializer.
+        let (t, init) = if self.peek_token(t, TokenType::Var).is_some() {
+            let (t, decl) = self.parse_declaration(t)?;
+            // parse_declaration consumes the `;`, but we check that below.
+            (t - 1, Some(decl))
+        } else if self.peek_token(t, TokenType::Semicolon).is_some() {
+            (t, None)
+        } else {
+            let (t, expr) = self.parse_expression(t)?;
+            let decl = Some(Declaration::stmt(expr.src, Stmt::expr(expr.src, expr)));
+            (t, decl)
+        };
+        let init = init.map(Box::new);
+
+        // Check for a semicolon.
+        let (t, Some(_)) = self.consume_token(t, TokenType::Semicolon)? else {
+            return self.unexpected_eof();
+        };
+
+        // Parse the condition.
+        let (t, condition) = if self.peek_token(t, TokenType::Semicolon).is_some() {
+            (t, None)
+        } else {
+            let (t, expr) = self.parse_expression(t)?;
+            (t, Some(expr))
+        };
+
+        // Check for a semicolon.
+        let (t, Some(_)) = self.consume_token(t, TokenType::Semicolon)? else {
+            return self.unexpected_eof();
+        };
+
+        // Parse the increment.
+        let (t, increment) = if self.peek_token(t, TokenType::RightParen).is_some() {
+            (t, None)
+        } else {
+            let (t, expr) = self.parse_expression(t)?;
+            (t, Some(expr))
+        };
+        let increment = increment.map(Box::new);
+
+        // Check for right paren.
+        let (t, Some(_)) = self.consume_token(t, TokenType::RightParen)? else {
+            return self.unexpected_eof();
+        };
+
+        let (t, Some(lbrace_tok)) = self.consume_token(t, TokenType::LeftBrace)? else {
+            return self.unexpected_eof();
+        };
+
+        // Parse the body.
+        let (t, mut body) = self.parse_block(t)?;
+        body.src += lbrace_tok.src;
+        src += body.src;
+
+        Ok((
+            t,
+            Stmt::r#for(src, init, condition, increment, body),
+        ))
     }
 
     fn parse_statement(&mut self, t: usize) -> MultiResult<(usize, Node<Stmt>)> {
@@ -354,6 +420,10 @@ impl<'p> Parser<'p> {
             return Ok((t, stmt));
         } else if let Some(tok) = self.peek_token(t, TokenType::While) {
             let (t, mut stmt) = self.parse_while(t + 1)?;
+            stmt.src += tok.src;
+            return Ok((t, stmt));
+        } else if let Some(tok) = self.peek_token(t, TokenType::For) {
+            let (t, mut stmt) = self.parse_for(t + 1)?;
             stmt.src += tok.src;
             return Ok((t, stmt));
         } else if let Some(tok) = self.peek_token(t, TokenType::LeftBrace) {
@@ -727,6 +797,114 @@ mod test {
                     s(0, 10),
                     "x",
                     Expr::number(s(8, 1), "4")
+                )]
+            )
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn r#while() -> MultiResult<()> {
+        assert_eq!(
+            parse("while (true) { false; }")?,
+            Program::new(
+                s(0, 23),
+                vec![Declaration::stmt(
+                    s(0, 23),
+                    Stmt::r#while(
+                        s(0, 23),
+                        Expr::boolean(s(6, 6), true),
+                        Stmt::block(
+                            s(13, 10),
+                            vec![Declaration::stmt(
+                                s(15, 6),
+                                Stmt::expr(s(15, 6), Expr::boolean(s(15, 5), false))
+                            )]
+                        )
+                    )
+                )]
+            )
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn r#for() -> MultiResult<()> {
+        assert_eq!(
+            parse("for (a; b; c) { false; }")?,
+            Program::new(
+                s(0, 24),
+                vec![Declaration::stmt(
+                    s(0, 24),
+                    Stmt::r#for(
+                        s(0, 24),
+                        Some(
+                            Declaration::stmt(
+                                s(5, 1),
+                                Stmt::expr(s(5, 1), Expr::variable(s(5, 1), "a"))
+                            )
+                            .into()
+                        ),
+                        Some(Expr::variable(s(8, 1), "b")),
+                        Some(Expr::variable(s(11, 1), "c").into()),
+                        Stmt::block(
+                            s(14, 10),
+                            vec![Declaration::stmt(
+                                s(16, 6),
+                                Stmt::expr(s(16, 6), Expr::boolean(s(16, 5), false))
+                            )]
+                        )
+                    )
+                )]
+            )
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn for_empty() -> MultiResult<()> {
+        assert_eq!(
+            parse("for ( ;  ;  ) { false; }")?,
+            Program::new(
+                s(0, 24),
+                vec![Declaration::stmt(
+                    s(0, 24),
+                    Stmt::r#for(
+                        s(0, 24),
+                        None,
+                        None,
+                        None,
+                        Stmt::block(
+                            s(14, 10),
+                            vec![Declaration::stmt(
+                                s(16, 6),
+                                Stmt::expr(s(16, 6), Expr::boolean(s(16, 5), false))
+                            )]
+                        )
+                    )
+                )]
+            )
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn for_decl() -> MultiResult<()> {
+        assert_eq!(
+            parse("for (var i = 0;;) { }")?,
+            Program::new(
+                s(0, 21),
+                vec![Declaration::stmt(
+                    s(0, 21),
+                    Stmt::r#for(
+                        s(0, 21),
+                        Some(
+                            Declaration::vardecl(s(5, 10), "i", Expr::number(s(13, 1), "0")).into()
+                        ),
+                        None,
+                        None,
+                        Stmt::block(s(18, 3), vec![])
+                    )
                 )]
             )
         );

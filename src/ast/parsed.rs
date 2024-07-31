@@ -27,8 +27,14 @@ macros::ast! {
             consequent: NodeRef<Stmt>,
             alternate: Option<NodeRef<Stmt>>,
         },
-        Loop {
+        While {
             precondition: Node<Expr>,
+            body: NodeRef<Stmt>,
+        },
+        For {
+            init: Option<NodeRef<Declaration>>,
+            condition: Option<Node<Expr>>,
+            increment: Option<NodeRef<Expr>>,
             body: NodeRef<Stmt>,
         },
     }

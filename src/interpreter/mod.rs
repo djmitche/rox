@@ -162,7 +162,7 @@ impl parsed::Visitor for Interpreter {
                     v.traverse(self)?;
                 }
             }
-            parsed::Stmt::Loop { precondition, body } => {
+            parsed::Stmt::While { precondition, body } => {
                 loop {
                     // The condition expression will leave a value on the stack.
                     precondition.traverse(self)?;
@@ -172,7 +172,29 @@ impl parsed::Visitor for Interpreter {
                     body.traverse(self)?;
                 }
             }
-            _ => {}
+            parsed::Stmt::For {
+                init,
+                condition,
+                increment,
+                body,
+            } => {
+                if let Some(init) = init {
+                    init.traverse(self)?;
+                }
+                loop {
+                    // The condition expression will leave a value on the stack.
+                    if let Some(condition) = condition {
+                        condition.traverse(self)?;
+                        if !self.stack.pop().unwrap().is_truthy() {
+                            break;
+                        }
+                    }
+                    body.traverse(self)?;
+                    if let Some(increment) = increment {
+                        increment.traverse(self)?;
+                    }
+                }
+            }
         };
         Ok(())
     }

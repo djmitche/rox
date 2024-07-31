@@ -14,5 +14,8 @@
 		 print "hello" + " " + x;
 		 y = y - 1;
 	 }
+	 for (var i = 0; i < 10; i = i + 1) {
+	 	print i;
+	 }
  }
  print y;
