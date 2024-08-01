@@ -1,7 +1,7 @@
 use crate::error::{Errors, MultiResult};
 use crate::interpreter::Interpreter;
 use crate::parser::parse;
-use crate::interpreter::desugar::desugar;
+use crate::compiler::desugar;
 use std::fs;
 use std::io::{self, BufRead};
 

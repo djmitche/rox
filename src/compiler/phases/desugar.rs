@@ -1,14 +1,11 @@
-#![allow(unused_variables, dead_code)]
-// TODO: move this to a compiler phase
+//! De-sugar the parsed rox program:
+//!
+//!  - Convert `for` loops into a simple `loop`.
+//!  - Replace all optional bits with the default.
 
 use crate::ast::Node;
 use crate::ast::{desugared, parsed};
 use crate::error::Result;
-
-struct DesugarProgram(Option<Node<desugared::Program>>);
-struct DesugarDeclaration(Option<Node<desugared::Declaration>>);
-struct DesugarStmt(Option<Node<desugared::Stmt>>);
-struct DesugarExpr(Option<Node<desugared::Expr>>);
 
 pub fn desugar_program(parsed: &Node<parsed::Program>) -> Result<Node<desugared::Program>> {
     Ok(desugared::Program::new(
@@ -27,7 +24,10 @@ fn desugar_declaration(parsed: &Node<parsed::Declaration>) -> Result<Node<desuga
         parsed::Declaration::VarDecl { variable, expr } => desugared::Declaration::vardecl(
             parsed.src,
             variable,
-            expr.as_ref().map(desugar_expr).transpose()?,
+            expr.as_ref()
+                .map(desugar_expr)
+                .transpose()?
+                .unwrap_or_else(|| desugared::Expr::nil(parsed.src)),
         ),
         parsed::Declaration::Stmt(stmt) => {
             desugared::Declaration::stmt(parsed.src, desugar_stmt(stmt)?)
@@ -45,7 +45,12 @@ fn desugar_stmt(parsed: &Node<parsed::Stmt>) -> Result<Node<desugared::Stmt>> {
                 .collect::<Result<Vec<_>>>()?,
         ),
         parsed::Stmt::Print(e) => {
-            desugared::Stmt::print(parsed.src, e.as_ref().map(desugar_expr).transpose()?)
+            let v = e
+                .as_ref()
+                .map(desugar_expr)
+                .transpose()?
+                .unwrap_or_else(|| desugared::Expr::string(parsed.src, ""));
+            desugared::Stmt::print(parsed.src, v)
         }
         parsed::Stmt::Conditional {
             condition,
@@ -55,36 +60,46 @@ fn desugar_stmt(parsed: &Node<parsed::Stmt>) -> Result<Node<desugared::Stmt>> {
             parsed.src,
             desugar_expr(condition)?,
             desugar_stmt(consequent)?,
-            alternate
-                .as_ref()
-                .map(|s| desugar_stmt(s))
-                .transpose()?
-                .map(Box::new),
+            Box::new(
+                alternate
+                    .as_ref()
+                    .map(|s| desugar_stmt(s))
+                    .transpose()?
+                    .unwrap_or_else(|| desugared::Stmt::block(parsed.src, vec![])),
+            ),
         ),
-        parsed::Stmt::While { precondition, body } => desugared::Stmt::r#while(
-            parsed.src,
-            desugar_expr(precondition)?,
-            desugar_stmt(body)?,
-        ),
+        parsed::Stmt::While { precondition, body } => {
+            desugared::Stmt::r#loop(parsed.src, desugar_expr(precondition)?, desugar_stmt(body)?)
+        }
         parsed::Stmt::For {
             init,
             condition,
             increment,
             body,
-        } => desugared::Stmt::r#for(
-            parsed.src,
-            init.as_ref()
-                .map(|d| desugar_declaration(d))
-                .transpose()?
-                .map(Box::new),
-            condition.as_ref().map(desugar_expr).transpose()?,
-            increment
-                .as_ref()
-                .map(|e| desugar_expr(e))
-                .transpose()?
-                .map(Box::new),
-            desugar_stmt(body)?,
-        ),
+        } => {
+            // Convert for loop to `{ #init; loop (#condition) { { #body } #increment } }`
+            let mut outer_block = vec![];
+            if let Some(init) = init {
+                outer_block.push(desugar_declaration(init)?);
+            }
+            let loop_condition = condition.as_ref().map(desugar_expr).transpose()?;
+            let loop_condition =
+                loop_condition.unwrap_or_else(|| desugared::Expr::boolean(body.src, true));
+            let mut loop_body = vec![];
+            loop_body.push(desugared::Declaration::stmt(body.src, desugar_stmt(body)?));
+            if let Some(increment) = increment {
+                loop_body.push(desugared::Declaration::stmt(
+                    increment.src,
+                    desugared::Stmt::expr(increment.src, desugar_expr(increment)?),
+                ));
+            }
+            let loop_body = desugared::Stmt::block(body.src, loop_body);
+            outer_block.push(desugared::Declaration::stmt(
+                parsed.src,
+                desugared::Stmt::r#loop(parsed.src, loop_condition, loop_body),
+            ));
+            desugared::Stmt::block(parsed.src, outer_block)
+        }
     })
 }
 

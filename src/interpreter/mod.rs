@@ -1,6 +1,5 @@
 mod environment;
 mod value;
-pub mod desugar; // XXX
 
 use std::rc::Rc;
 
@@ -114,13 +113,8 @@ impl desugared::Visitor for Interpreter {
         use desugared::Declaration::*;
         match stmt {
             Stmt(_) => {}
-            VarDecl { variable, expr } => {
-                let value = if expr.is_some() {
-                    // Expression has left its value on the stack.
-                    self.stack.pop().unwrap()
-                } else {
-                    Value::Nil
-                };
+            VarDecl { variable, .. } => {
+                let value = self.stack.pop().unwrap();
                 self.environment.define(variable.clone(), value);
             }
         }
@@ -142,13 +136,9 @@ impl desugared::Visitor for Interpreter {
                 }
                 self.environment = self.environment.parent().unwrap();
             }
-            desugared::Stmt::Print(v0) => {
-                if let Some(v) = v0 {
-                    v.traverse(self)?;
-                    println!("{:?}", self.stack.pop().unwrap());
-                } else {
-                    println!();
-                }
+            desugared::Stmt::Print(v) => {
+                v.traverse(self)?;
+                println!("{:?}", self.stack.pop().unwrap());
             }
             desugared::Stmt::Conditional {
                 condition,
@@ -158,12 +148,13 @@ impl desugared::Visitor for Interpreter {
                 // The condition expression will leave a value on the stack.
                 condition.traverse(self)?;
                 if self.stack.pop().unwrap().is_truthy() {
-                    consequent.traverse(self)?;
-                } else if let Some(v) = alternate {
-                    v.traverse(self)?;
+                    consequent
+                } else {
+                    alternate
                 }
+                .traverse(self)?;
             }
-            desugared::Stmt::While { precondition, body } => {
+            desugared::Stmt::Loop { precondition, body } => {
                 loop {
                     // The condition expression will leave a value on the stack.
                     precondition.traverse(self)?;
@@ -171,29 +162,6 @@ impl desugared::Visitor for Interpreter {
                         break;
                     }
                     body.traverse(self)?;
-                }
-            }
-            desugared::Stmt::For {
-                init,
-                condition,
-                increment,
-                body,
-            } => {
-                if let Some(init) = init {
-                    init.traverse(self)?;
-                }
-                loop {
-                    // The condition expression will leave a value on the stack.
-                    if let Some(condition) = condition {
-                        condition.traverse(self)?;
-                        if !self.stack.pop().unwrap().is_truthy() {
-                            break;
-                        }
-                    }
-                    body.traverse(self)?;
-                    if let Some(increment) = increment {
-                        increment.traverse(self)?;
-                    }
                 }
             }
         };

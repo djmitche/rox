@@ -1,7 +1,7 @@
 //! AST representation of a de-sugared Rox program.
 #![allow(dead_code)]
 use crate::ast::node::{Node, NodeRef};
-use crate::ast::ops::{BinaryOp, UnaryOp, LogicalOp};
+use crate::ast::ops::{BinaryOp, LogicalOp, UnaryOp};
 use crate::error::Result;
 use crate::src::Src;
 
@@ -13,7 +13,7 @@ macros::ast! {
     pub enum Declaration {
         VarDecl {
             variable: String,
-            expr: Option<Node<Expr>>,
+            expr: Node<Expr>,
         },
         Stmt(Node<Stmt>)
     }
@@ -21,20 +21,14 @@ macros::ast! {
     pub enum Stmt {
         Expr(Node<Expr>),
         Block(Vec<Node<Declaration>>),
-        Print(Option<Node<Expr>>),
+        Print(Node<Expr>),
         Conditional{
             condition: Node<Expr>,
             consequent: NodeRef<Stmt>,
-            alternate: Option<NodeRef<Stmt>>,
+            alternate: NodeRef<Stmt>,
         },
-        While {
+        Loop {
             precondition: Node<Expr>,
-            body: NodeRef<Stmt>,
-        },
-        For {
-            init: Option<NodeRef<Declaration>>,
-            condition: Option<Node<Expr>>,
-            increment: Option<NodeRef<Expr>>,
             body: NodeRef<Stmt>,
         },
     }
@@ -51,4 +45,3 @@ macros::ast! {
         LogOp(LogicalOp, NodeRef<Expr>, NodeRef<Expr>),
     }
 }
-
