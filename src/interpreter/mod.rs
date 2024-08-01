@@ -1,9 +1,10 @@
 mod environment;
 mod value;
+pub mod desugar; // XXX
 
 use std::rc::Rc;
 
-use crate::ast::{self, parsed};
+use crate::ast::{self, desugared};
 use crate::error::Result;
 use environment::Environment;
 use value::Value;
@@ -21,21 +22,21 @@ impl Interpreter {
         }
     }
 }
-impl parsed::Visitor for Interpreter {
-    fn expr_recurse(&mut self, val: &mut parsed::Expr) -> crate::error::Result<()> {
+impl desugared::Visitor for Interpreter {
+    fn expr_recurse(&mut self, val: &mut desugared::Expr) -> crate::error::Result<()> {
         #[allow(unused_variables, unreachable_patterns)]
         match val {
-            parsed::Expr::Assignment(v0, v1) => {
+            desugared::Expr::Assignment(v0, v1) => {
                 v1.traverse(self)?;
             }
-            parsed::Expr::Unary(v0, v1) => {
+            desugared::Expr::Unary(v0, v1) => {
                 v1.traverse(self)?;
             }
-            parsed::Expr::BinOp(v0, v1, v2) => {
+            desugared::Expr::BinOp(v0, v1, v2) => {
                 v1.traverse(self)?;
                 v2.traverse(self)?;
             }
-            parsed::Expr::LogOp(op, lhs, rhs) => {
+            desugared::Expr::LogOp(op, lhs, rhs) => {
                 lhs.traverse(self)?;
                 let lhs_val = self.stack.last().unwrap();
                 // Short-circuit appropriately, leaving the lhs val on the stack
@@ -55,8 +56,8 @@ impl parsed::Visitor for Interpreter {
         Ok(())
     }
 
-    fn expr_end(&mut self, expr: &mut parsed::Expr) -> Result<()> {
-        use parsed::Expr::*;
+    fn expr_end(&mut self, expr: &mut desugared::Expr) -> Result<()> {
+        use desugared::Expr::*;
         match expr {
             Variable(n) => self.stack.push(self.environment.get(n)?),
             String(s) => self.stack.push(Value::String(s.clone())),
@@ -109,8 +110,8 @@ impl parsed::Visitor for Interpreter {
         Ok(())
     }
 
-    fn declaration_end(&mut self, stmt: &mut parsed::Declaration) -> Result<()> {
-        use parsed::Declaration::*;
+    fn declaration_end(&mut self, stmt: &mut desugared::Declaration) -> Result<()> {
+        use desugared::Declaration::*;
         match stmt {
             Stmt(_) => {}
             VarDecl { variable, expr } => {
@@ -126,22 +127,22 @@ impl parsed::Visitor for Interpreter {
         Ok(())
     }
 
-    fn stmt_recurse(&mut self, val: &mut parsed::Stmt) -> crate::error::Result<()> {
+    fn stmt_recurse(&mut self, val: &mut desugared::Stmt) -> crate::error::Result<()> {
         #[allow(unused_variables, unreachable_patterns)]
         match val {
-            parsed::Stmt::Expr(v0) => {
+            desugared::Stmt::Expr(v0) => {
                 v0.traverse(self)?;
                 // Discard the result of the expression.
                 self.stack.pop();
             }
-            parsed::Stmt::Block(v0) => {
+            desugared::Stmt::Block(v0) => {
                 self.environment = self.environment.new_child();
                 for v in v0 {
                     v.traverse(self)?;
                 }
                 self.environment = self.environment.parent().unwrap();
             }
-            parsed::Stmt::Print(v0) => {
+            desugared::Stmt::Print(v0) => {
                 if let Some(v) = v0 {
                     v.traverse(self)?;
                     println!("{:?}", self.stack.pop().unwrap());
@@ -149,7 +150,7 @@ impl parsed::Visitor for Interpreter {
                     println!();
                 }
             }
-            parsed::Stmt::Conditional {
+            desugared::Stmt::Conditional {
                 condition,
                 consequent,
                 alternate,
@@ -162,7 +163,7 @@ impl parsed::Visitor for Interpreter {
                     v.traverse(self)?;
                 }
             }
-            parsed::Stmt::While { precondition, body } => {
+            desugared::Stmt::While { precondition, body } => {
                 loop {
                     // The condition expression will leave a value on the stack.
                     precondition.traverse(self)?;
@@ -172,7 +173,7 @@ impl parsed::Visitor for Interpreter {
                     body.traverse(self)?;
                 }
             }
-            parsed::Stmt::For {
+            desugared::Stmt::For {
                 init,
                 condition,
                 increment,

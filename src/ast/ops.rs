@@ -1,6 +1,6 @@
 use crate::token::TokenType;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum UnaryOp {
     Not,
     Neg,
@@ -17,7 +17,7 @@ impl TryFrom<TokenType> for UnaryOp {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum BinaryOp {
     Mul,
     Div,
@@ -48,7 +48,7 @@ impl TryFrom<TokenType> for BinaryOp {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum LogicalOp {
     And,
     Or,

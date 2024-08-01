@@ -388,7 +388,6 @@ impl<'p> Parser<'p> {
             let (t, expr) = self.parse_expression(t)?;
             (t, Some(expr))
         };
-        let increment = increment.map(Box::new);
 
         // Check for right paren.
         let (t, Some(_)) = self.consume_token(t, TokenType::RightParen)? else {

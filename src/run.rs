@@ -1,13 +1,15 @@
 use crate::error::{Errors, MultiResult};
 use crate::interpreter::Interpreter;
 use crate::parser::parse;
+use crate::interpreter::desugar::desugar;
 use std::fs;
 use std::io::{self, BufRead};
 
 /// Run the given data as a rox program.
 fn run(program: impl AsRef<str>) -> MultiResult<()> {
-    let mut ast = parse(program.as_ref())?;
-    ast.traverse(&mut Interpreter::new())
+    let parsed = parse(program.as_ref())?;
+    let mut desugared = desugar(&parsed).unwrap();
+    desugared.traverse(&mut Interpreter::new())
         .map_err(|e| Errors::from_error("interpreter", e))?;
     Ok(())
 }

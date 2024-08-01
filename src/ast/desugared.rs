@@ -1,4 +1,4 @@
-//! AST representation of a parsed Rox program.
+//! AST representation of a de-sugared Rox program.
 #![allow(dead_code)]
 use crate::ast::node::{Node, NodeRef};
 use crate::ast::ops::{BinaryOp, UnaryOp, LogicalOp};
@@ -34,7 +34,7 @@ macros::ast! {
         For {
             init: Option<NodeRef<Declaration>>,
             condition: Option<Node<Expr>>,
-            increment: Option<Node<Expr>>,
+            increment: Option<NodeRef<Expr>>,
             body: NodeRef<Stmt>,
         },
     }
@@ -51,3 +51,4 @@ macros::ast! {
         LogOp(LogicalOp, NodeRef<Expr>, NodeRef<Expr>),
     }
 }
+
