@@ -3,6 +3,7 @@ mod error;
 mod interpreter;
 mod compiler;
 mod parser;
+mod parser2;
 mod run;
 mod scanner;
 mod src;
