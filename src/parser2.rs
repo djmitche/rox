@@ -35,6 +35,15 @@ impl<T: std::cmp::PartialEq> PartialEq for ParseResult<T> {
     }
 }
 
+fn recognize_token(ty: TokenType) -> impl Recognizer<Output = Token> {
+    RecognizeToken(ty)
+}
+
+/// Convenience precursor to a string of alternates: `either().or(r1).or(r2)..`
+fn either<T>() -> impl Recognizer<Output = T> {
+    RecognizeFail(std::marker::PhantomData)
+}
+
 // ---
 
 trait Recognizer: Sized {
@@ -54,6 +63,19 @@ trait Recognizer: Sized {
     {
         RecognizeAlternate { r1: self, r2: r }
     }
+
+    fn map<U>(self, f: impl Fn(Self::Output) -> U) -> impl Recognizer<Output = U> {
+        RecognizeMap { r: self, f }
+    }
+}
+
+struct RecognizeFail<T>(std::marker::PhantomData<T>);
+impl<T> Recognizer for RecognizeFail<T> {
+    type Output = T;
+
+    fn recognize(&self, _parser: &mut Parser, _t: usize) -> ParseResult<Self::Output> {
+        Failure
+    }
 }
 
 struct RecognizeToken(TokenType);
@@ -70,10 +92,6 @@ impl Recognizer for RecognizeToken {
             Failure
         }
     }
-}
-
-fn recognize_token(ty: TokenType) -> impl Recognizer<Output = Token> {
-    RecognizeToken(ty)
 }
 
 struct RecognizeTuple<R1, T1, R2, T2>
@@ -135,38 +153,54 @@ where
     }
 }
 
-// TODO: map as method
-// TODO: alt(&[..])
-// TODO: catching and re-syncing after error?
-
-/*
-fn map<R, T, U, F>(mut r: R, f: F) -> impl FnMut(&mut Parser, usize) -> ParseResult<U>
+struct RecognizeMap<R, F, T, U>
 where
-    R: FnMut(&mut Parser, usize) -> ParseResult<T>,
+    R: Recognizer<Output = T>,
     F: Fn(T) -> U,
 {
-    move |parser: &mut Parser, t: usize| -> ParseResult<U> {
-        match r(parser, t) {
-            Success(t, v) => Success(t, f(v)),
+    r: R,
+    f: F,
+}
+
+impl<R, F, T, U> Recognizer for RecognizeMap<R, F, T, U>
+where
+    R: Recognizer<Output = T>,
+    F: Fn(T) -> U,
+{
+    type Output = U;
+
+    fn recognize(&self, parser: &mut Parser, t: usize) -> ParseResult<Self::Output> {
+        match self.r.recognize(parser, t) {
+            Success(t, v) => Success(t, (self.f)(v)),
             Failure => Failure,
             Error(e) => Error(e),
         }
     }
 }
 
+// TODO: alt(&[..])
+// TODO: catching and re-syncing after error?
+
 impl<'p> Parser<'p> {
     fn parse_primary(&mut self, t: usize) -> ParseResult<Node<Expr>> {
-        alt2(
-            map(recognize_token(TokenType::Identifier), |tok| {
-                Expr::variable(tok.src, tok.src_str(self.program))
-            }),
-            map(recognize_token(TokenType::String), |tok| {
-                Expr::string(tok.src, tok.src_str(self.program))
-            }),
-        )(self, t)
+        either()
+            .or(recognize_token(TokenType::Identifier)
+                .map(|tok| Expr::variable(tok.src, tok.src_str(self.program))))
+            .or(recognize_token(TokenType::String)
+                .map(|tok| Expr::string(tok.src, tok.src_str(self.program))))
+            .recognize(self, t)
     }
+
+    // TOOD: this is going to lead to an infinite-sized Recognizer, isn't it
+    /*
+    fn parse_unary(&mut self, t: usize) -> ParseResult<Node<Expr>> {
+        either()
+            .or(recognize_token(TokenType::Minus).then(Self::parse_primary))
+            .or(Self::parse_primary)
+            .recognize(self, t)
+    }
+    */
 }
-*/
 
 #[cfg(test)]
 mod test {
@@ -254,7 +288,22 @@ mod test {
         );
     }
 
-    /*
+    #[test]
+    fn test_map() {
+        let program = "abc";
+        let mut parser = Parser {
+            program,
+            tokens: &scan(program).unwrap(),
+            errors: Errors::new("test"),
+        };
+        assert_eq!(
+            recognize_token(TokenType::Identifier)
+                .map(|t| program[t.src.offset..t.src.offset + t.src.len].to_string())
+                .recognize(&mut parser, 0),
+            Success(1, String::from("abc"))
+        );
+    }
+
     fn test_parse_primary(program: &str, t: usize, exp: ParseResult<Node<Expr>>) {
         let mut parser = Parser {
             program,
@@ -273,5 +322,4 @@ mod test {
     fn parse_primary_string() {
         test_parse_primary("\"abc\"", 0, Success(1, Expr::string(s(0, 5), "\"abc\"")));
     }
-    */
 }
