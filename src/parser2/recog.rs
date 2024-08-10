@@ -1,3 +1,7 @@
+//! Components out of which the parser is built
+//!
+//! This is loosely modeled on nom, as combinatorial "recognizers" which recognize
+//! some prefix of the token stream starting at the given token.
 use super::{ParseResult, Parser};
 use crate::token::{Token, TokenType};
 
@@ -31,17 +35,40 @@ pub(super) fn recognize_token(ty: TokenType) -> impl Recognizer<Output = Token> 
     RecognizeToken(ty)
 }
 
-/// Convenience precursor to a string of alternates: `either().or(r1).or(r2)..`
-pub(super) fn either<T>() -> impl Recognizer<Output = T> {
-    RecognizeFail(std::marker::PhantomData)
-}
-
 /// Build a recognizer that executes the given function.
 pub(super) fn recognizer<F, T>(f: F) -> impl Recognizer<Output = T>
 where
     F: Fn(&mut Parser, usize) -> ParseResult<T>,
 {
     RecognizeFn { f }
+}
+
+pub(super) fn left_assoc<SUB, SEP, SEPT, FOLD, T>(
+    sub: SUB,
+    sep: SEP,
+    fold: FOLD,
+) -> impl Recognizer<Output = T>
+where
+    SUB: Recognizer<Output = T>,
+    SEP: Recognizer<Output = SEPT>,
+    FOLD: Fn(T, SEPT, T) -> T,
+{
+    recognizer(move |parser, t| {
+        let (lhs_t, lhs) = sub.recognize(parser, t)?;
+        let mut t = lhs_t;
+        let mut n = lhs;
+        loop {
+            let Success(op_t, op) = sep.recognize(parser, t) else {
+                break;
+            };
+            let Success(rhs_t, rhs) = sub.recognize(parser, op_t) else {
+                break;
+            };
+            t = rhs_t;
+            n = fold(n, op, rhs)
+        }
+        Success(t, n)
+    })
 }
 
 /// A recognizer that always fails.
@@ -171,6 +198,28 @@ where
     fn recognize(&self, parser: &mut Parser, t: usize) -> ParseResult<Self::Output> {
         (self.f)(parser, t)
     }
+}
+
+/// Create a recognizer that will match the first successful item.
+macro_rules! first_success {
+    ($branch1:expr, $($branchn:expr),*, ) => {
+        or_first_success!($branch1, $($branchn),*)
+    };
+    ($branch1:expr, $($branchn:expr),*) => {
+        or_first_success!($branch1, $($branchn),*)
+    };
+}
+
+macro_rules! or_first_success {
+    ($prefix:expr,) => {
+        $prefix
+    };
+    ($prefix:expr, $branch1:expr) => {
+        or_first_success!($prefix, $branch1,)
+    };
+    ($prefix:expr, $branch1:expr, $($branchn:expr),*) => {
+        or_first_success!($prefix.or($branch1), $($branchn),*)
+    };
 }
 
 #[cfg(test)]

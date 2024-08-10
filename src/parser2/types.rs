@@ -13,6 +13,34 @@ pub(super) enum ParseResult<T> {
     Error(String),
 }
 
+impl<T> std::ops::FromResidual for ParseResult<T> {
+    fn from_residual(residual: <Self as std::ops::Try>::Residual) -> Self {
+        if let Some(e) = residual {
+            ParseResult::Error(e)
+        } else {
+            ParseResult::Failure
+        }
+    }
+}
+
+impl<T> std::ops::Try for ParseResult<T> {
+    type Output = (usize, T);
+
+    type Residual = Option<String>;
+
+    fn from_output(output: Self::Output) -> Self {
+        ParseResult::Success(output.0, output.1)
+    }
+
+    fn branch(self) -> std::ops::ControlFlow<Self::Residual, Self::Output> {
+        match self {
+            ParseResult::Success(t, v) => std::ops::ControlFlow::Continue((t, v)),
+            ParseResult::Failure => std::ops::ControlFlow::Break(None),
+            ParseResult::Error(e) => std::ops::ControlFlow::Break(Some(e)),
+        }
+    }
+}
+
 impl<T: std::cmp::PartialEq> PartialEq for ParseResult<T> {
     fn eq(&self, other: &Self) -> bool {
         use ParseResult::*;
