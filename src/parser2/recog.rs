@@ -1,52 +1,9 @@
-#![allow(unused_imports, dead_code)]
-use crate::ast::parsed::{Declaration, Expr, Program, Stmt};
-use crate::ast::{BinaryOp, LogicalOp, Node, NodeRef, UnaryOp};
-use crate::error::{Error, Errors, MultiResult, Result};
-use crate::scanner::scan;
-use crate::src::Src;
-use crate::token::{Token, TokenType, Tokens};
-
-// ---
-
-struct Parser<'p> {
-    program: &'p str,
-    tokens: &'p [Token],
-    errors: Errors,
-}
-
-#[derive(Debug)]
-enum ParseResult<T> {
-    Success(usize, T),
-    Failure,
-    Error(String),
-}
+use super::{ParseResult, Parser};
+use crate::token::{Token, TokenType};
 
 use ParseResult::*;
 
-impl<T: std::cmp::PartialEq> PartialEq for ParseResult<T> {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Success(lt, lv), Success(rt, rv)) => (lt, lv) == (rt, rv),
-            // Errors are never equal
-            (Error(_), Error(_)) => false,
-            (Failure, Failure) => true,
-            _ => false,
-        }
-    }
-}
-
-fn recognize_token(ty: TokenType) -> impl Recognizer<Output = Token> {
-    RecognizeToken(ty)
-}
-
-/// Convenience precursor to a string of alternates: `either().or(r1).or(r2)..`
-fn either<T>() -> impl Recognizer<Output = T> {
-    RecognizeFail(std::marker::PhantomData)
-}
-
-// ---
-
-trait Recognizer: Sized {
+pub trait Recognizer: Sized {
     type Output;
     fn recognize(&self, parser: &mut Parser, t: usize) -> ParseResult<Self::Output>;
 
@@ -69,6 +26,25 @@ trait Recognizer: Sized {
     }
 }
 
+/// Buil da recognizer that will match the given toekn type and return the token.
+pub(super) fn recognize_token(ty: TokenType) -> impl Recognizer<Output = Token> {
+    RecognizeToken(ty)
+}
+
+/// Convenience precursor to a string of alternates: `either().or(r1).or(r2)..`
+pub(super) fn either<T>() -> impl Recognizer<Output = T> {
+    RecognizeFail(std::marker::PhantomData)
+}
+
+/// Build a recognizer that executes the given function.
+pub(super) fn recognizer<F, T>(f: F) -> impl Recognizer<Output = T>
+where
+    F: Fn(&mut Parser, usize) -> ParseResult<T>,
+{
+    RecognizeFn { f }
+}
+
+/// A recognizer that always fails.
 struct RecognizeFail<T>(std::marker::PhantomData<T>);
 impl<T> Recognizer for RecognizeFail<T> {
     type Output = T;
@@ -78,6 +54,7 @@ impl<T> Recognizer for RecognizeFail<T> {
     }
 }
 
+/// A recognizer for a single token.
 struct RecognizeToken(TokenType);
 impl Recognizer for RecognizeToken {
     type Output = Token;
@@ -94,6 +71,7 @@ impl Recognizer for RecognizeToken {
     }
 }
 
+/// A recognizer for a tuple of tokens, returning that tuple.
 struct RecognizeTuple<R1, T1, R2, T2>
 where
     R1: Recognizer<Output = T1>,
@@ -102,7 +80,6 @@ where
     r1: R1,
     r2: R2,
 }
-
 impl<R1, T1, R2, T2> Recognizer for RecognizeTuple<R1, T1, R2, T2>
 where
     R1: Recognizer<Output = T1>,
@@ -122,6 +99,7 @@ where
     }
 }
 
+/// A recognizer for a set of alternatives, matched in order.
 struct RecognizeAlternate<R1, R2, T>
 where
     R1: Recognizer<Output = T>,
@@ -130,7 +108,6 @@ where
     r1: R1,
     r2: R2,
 }
-
 impl<R1, R2, T> Recognizer for RecognizeAlternate<R1, R2, T>
 where
     R1: Recognizer<Output = T>,
@@ -153,6 +130,7 @@ where
     }
 }
 
+/// A recognizer that maps the given function onto the success value of the given recognizer.
 struct RecognizeMap<R, F, T, U>
 where
     R: Recognizer<Output = T>,
@@ -161,7 +139,6 @@ where
     r: R,
     f: F,
 }
-
 impl<R, F, T, U> Recognizer for RecognizeMap<R, F, T, U>
 where
     R: Recognizer<Output = T>,
@@ -178,35 +155,28 @@ where
     }
 }
 
-// TODO: alt(&[..])
-// TODO: catching and re-syncing after error?
+/// A recognizer that delegates to a function.
+struct RecognizeFn<F, T>
+where
+    F: Fn(&mut Parser, usize) -> ParseResult<T>,
+{
+    f: F,
+}
+impl<F, T> Recognizer for RecognizeFn<F, T>
+where
+    F: Fn(&mut Parser, usize) -> ParseResult<T>,
+{
+    type Output = T;
 
-impl<'p> Parser<'p> {
-    fn parse_primary(&mut self, t: usize) -> ParseResult<Node<Expr>> {
-        either()
-            .or(recognize_token(TokenType::Identifier)
-                .map(|tok| Expr::variable(tok.src, tok.src_str(self.program))))
-            .or(recognize_token(TokenType::String)
-                .map(|tok| Expr::string(tok.src, tok.src_str(self.program))))
-            .recognize(self, t)
+    fn recognize(&self, parser: &mut Parser, t: usize) -> ParseResult<Self::Output> {
+        (self.f)(parser, t)
     }
-
-    // TOOD: this is going to lead to an infinite-sized Recognizer, isn't it
-    /*
-    fn parse_unary(&mut self, t: usize) -> ParseResult<Node<Expr>> {
-        either()
-            .or(recognize_token(TokenType::Minus).then(Self::parse_primary))
-            .or(Self::parse_primary)
-            .recognize(self, t)
-    }
-    */
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-
-    use crate::src::Src;
+    use crate::{error::Errors, scanner::scan, src::Src};
 
     /// Shortcut to create a Src.
     fn s(offset: usize, len: usize) -> Src {
@@ -302,24 +272,5 @@ mod test {
                 .recognize(&mut parser, 0),
             Success(1, String::from("abc"))
         );
-    }
-
-    fn test_parse_primary(program: &str, t: usize, exp: ParseResult<Node<Expr>>) {
-        let mut parser = Parser {
-            program,
-            tokens: &scan(program).unwrap(),
-            errors: Errors::new("test"),
-        };
-        assert_eq!(parser.parse_primary(t), exp);
-    }
-
-    #[test]
-    fn parse_primary_ident() {
-        test_parse_primary("x", 0, Success(1, Expr::variable(s(0, 1), "x")));
-    }
-
-    #[test]
-    fn parse_primary_string() {
-        test_parse_primary("\"abc\"", 0, Success(1, Expr::string(s(0, 5), "\"abc\"")));
     }
 }
