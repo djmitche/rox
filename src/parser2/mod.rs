@@ -128,8 +128,22 @@ fn parse_logic_or(parser: &mut Parser, t: usize) -> ParseResult<Node<Expr>> {
     .recognize(parser, t)
 }
 
+fn parse_assignment(parser: &mut Parser, t: usize) -> ParseResult<Node<Expr>> {
+    first_success!(
+        // TODO: support parsing arbitrary lvalue expresions
+        recognize_token(TokenType::Identifier)
+            .then(recognize_token(TokenType::Equal))
+            .then(recognizer(parse_assignment))
+            .map(|((ident, _), expr)| {
+                Expr::assignment(ident.src + expr.src, ident.src_str(parser.program), expr)
+            }),
+        recognizer(parse_logic_or),
+    )
+    .recognize(parser, t)
+}
+
 fn parse_expression(parser: &mut Parser, t: usize) -> ParseResult<Node<Expr>> {
-    parse_logic_or(parser, t)
+    parse_assignment(parser, t)
 }
 
 #[cfg(test)]
@@ -367,6 +381,31 @@ mod test {
                         Expr::number(s(2, 1), "2"),
                     ),
                     Expr::number(s(4, 1), "3"),
+                ),
+            ),
+        );
+    }
+
+    #[test]
+    fn parse_multi_assignment() {
+        test_parse_expression(
+            "x=y=true==false",
+            0,
+            Success(
+                7,
+                Expr::assignment(
+                    s(0, 15),
+                    "x",
+                    Expr::assignment(
+                        s(2, 13),
+                        "y",
+                        Expr::binop(
+                            s(4, 11),
+                            BinaryOp::Equal,
+                            Expr::boolean(s(4, 4), true),
+                            Expr::boolean(s(10, 5), false),
+                        ),
+                    ),
                 ),
             ),
         );
