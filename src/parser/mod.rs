@@ -156,7 +156,7 @@ fn parse_declarations(
     mut t: usize,
 ) -> ParseResult<(Src, Vec<Node<Declaration>>)> {
     let mut declarations = Vec::new();
-    while let Success(decl_t, decl) = dbg!(parse_declaration(parser, t)) {
+    while let Success(decl_t, decl) = parse_declaration(parser, t) {
         declarations.push(decl);
         t = decl_t;
     }
@@ -189,15 +189,6 @@ fn parse_if_stmt(parser: &mut Parser, t: usize) -> ParseResult<Node<Stmt>> {
         recognize_token(TokenType::If)
             .then(recognizer(paren_expr))
             .then(recognizer(brace_stmt))
-            .map(|((r#if, cond), conseq)| Stmt::conditional(
-                r#if.src + conseq.src,
-                cond,
-                conseq,
-                None
-            )),
-        recognize_token(TokenType::If)
-            .then(recognizer(paren_expr))
-            .then(recognizer(brace_stmt))
             .then(recognize_token(TokenType::Else))
             .then(recognizer(brace_stmt))
             .map(|((((r#if, cond), conseq), _), altern)| Stmt::conditional(
@@ -205,6 +196,15 @@ fn parse_if_stmt(parser: &mut Parser, t: usize) -> ParseResult<Node<Stmt>> {
                 cond,
                 conseq,
                 Some(altern.into())
+            )),
+        recognize_token(TokenType::If)
+            .then(recognizer(paren_expr))
+            .then(recognizer(brace_stmt))
+            .map(|((r#if, cond), conseq)| Stmt::conditional(
+                r#if.src + conseq.src,
+                cond,
+                conseq,
+                None
             )),
     )
     .recognize(parser, t)
