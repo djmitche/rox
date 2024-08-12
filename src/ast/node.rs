@@ -7,6 +7,20 @@ pub struct Node<K> {
     pub src: Src,
 }
 
+impl<K: std::fmt::Debug> Node<K> {
+    /// Update the `src` in this node.
+    pub fn with_src(mut self, src: Src) -> Self {
+        self.src = src;
+        self
+    }
+
+    /// Add the given src to this node's src.
+    pub fn add_src(mut self, src: Src) -> Self {
+        self.src = self.src + src;
+        self
+    }
+}
+
 impl<K: std::fmt::Debug> std::fmt::Debug for Node<K> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple(&format!("Node@{}+{}", self.src.offset, self.src.len))

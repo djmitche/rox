@@ -43,6 +43,11 @@ where
     RecognizeFn { f }
 }
 
+/// Recognize nothing. This is useful in alternatives.
+pub(super) fn recognize_nothing() -> impl Recognizer<Output = ()> {
+    recognizer(|_, t| Success(t, ()))
+}
+
 pub(super) fn left_assoc<SUB, SEP, SEPT, FOLD, T>(
     sub: SUB,
     sep: SEP,
