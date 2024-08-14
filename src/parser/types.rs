@@ -1,4 +1,5 @@
-use crate::token::Token;
+use crate::{src::Src, token::Token};
+use crate::error::Error;
 
 pub(super) struct Parser<'p> {
     pub(super) program: &'p str,
@@ -9,7 +10,7 @@ pub(super) struct Parser<'p> {
 pub(super) enum ParseResult<T> {
     Success(usize, T),
     Failure,
-    Error(String),
+    Error(Error),
 }
 
 impl<T> std::ops::FromResidual for ParseResult<T> {
@@ -25,7 +26,7 @@ impl<T> std::ops::FromResidual for ParseResult<T> {
 impl<T> std::ops::Try for ParseResult<T> {
     type Output = (usize, T);
 
-    type Residual = Option<String>;
+    type Residual = Option<Error>;
 
     fn from_output(output: Self::Output) -> Self {
         ParseResult::Success(output.0, output.1)

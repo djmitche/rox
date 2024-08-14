@@ -328,6 +328,7 @@ pub fn parse(program: &str) -> Result<Node<Program>> {
     };
     if t < parser.tokens.len() {
         let tok = &tokens[t];
+        // TODO: scan for TokenType::Error in remaining tokens.
         return Err(Error::syntax(
             format!("Unexpected token after program: {:?}", tok.ty),
             tok.src,

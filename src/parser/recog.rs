@@ -95,6 +95,10 @@ impl Recognizer for RecognizeToken {
         let Some(token) = parser.tokens.get(t) else {
             return Failure;
         };
+        // Convert scanner errors in to ParseResult::Error.
+        if let TokenType::Error(_) = token.ty {
+            return Error(token.to_error());
+        }
         if token.ty == self.0 {
             Success(t + 1, token.clone())
         } else {

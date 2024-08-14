@@ -74,7 +74,7 @@ impl Token {
     }
 
     /// Convert an Error variant into a [`crate::error::Error`]. Any other variant will panic.
-    pub fn to_error(self) -> crate::error::Error {
+    pub fn to_error(&self) -> crate::error::Error {
         let TokenType::Error(e) = self.ty else {
             panic!("Not an Error variant");
         };
