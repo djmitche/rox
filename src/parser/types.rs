@@ -1,9 +1,8 @@
-use crate::{error::Errors, token::Token};
+use crate::token::Token;
 
 pub(super) struct Parser<'p> {
     pub(super) program: &'p str,
     pub(super) tokens: &'p [Token],
-    pub(super) errors: Errors,
 }
 
 #[derive(Debug)]

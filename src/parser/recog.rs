@@ -230,7 +230,7 @@ macro_rules! or_first_success {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::{error::Errors, scanner::scan, src::Src};
+    use crate::{scanner::scan, src::Src};
 
     /// Shortcut to create a Src.
     fn s(offset: usize, len: usize) -> Src {
@@ -247,8 +247,7 @@ mod test {
         let program = "()";
         let mut parser = Parser {
             program,
-            tokens: &scan(program).unwrap(),
-            errors: Errors::new("test"),
+            tokens: &scan(program),
         };
         assert_eq!(
             recognize_token(TokenType::LeftParen).recognize(&mut parser, 0),
@@ -265,8 +264,7 @@ mod test {
         let program = "()";
         let mut parser = Parser {
             program,
-            tokens: &scan(program).unwrap(),
-            errors: Errors::new("test"),
+            tokens: &scan(program),
         };
         assert_eq!(
             recognize_token(TokenType::RightParen).recognize(&mut parser, 2),
@@ -279,8 +277,7 @@ mod test {
         let program = "1 () 2";
         let mut parser = Parser {
             program,
-            tokens: &scan(program).unwrap(),
-            errors: Errors::new("test"),
+            tokens: &scan(program),
         };
         assert_eq!(
             recognize_token(TokenType::LeftParen)
@@ -301,8 +298,7 @@ mod test {
         let program = "false";
         let mut parser = Parser {
             program,
-            tokens: &scan(program).unwrap(),
-            errors: Errors::new("test"),
+            tokens: &scan(program),
         };
         assert_eq!(
             recognize_token(TokenType::True)
@@ -317,8 +313,7 @@ mod test {
         let program = "abc";
         let mut parser = Parser {
             program,
-            tokens: &scan(program).unwrap(),
-            errors: Errors::new("test"),
+            tokens: &scan(program),
         };
         assert_eq!(
             recognize_token(TokenType::Identifier)

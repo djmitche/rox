@@ -9,7 +9,7 @@ use types::*;
 
 use crate::ast::parsed::{Declaration, Expr, Program, Stmt};
 use crate::ast::{BinaryOp, LogicalOp, Node, NodeRef, UnaryOp};
-use crate::error::{Error, Errors, MultiResult, Result};
+use crate::error::{Error, Result};
 use crate::scanner::scan;
 use crate::src::Src;
 use crate::token::{Token, TokenType, Tokens};
@@ -262,9 +262,6 @@ fn parse_for_stmt(parser: &mut Parser, t: usize) -> ParseResult<Node<Stmt>> {
 
 fn parse_statement(parser: &mut Parser, t: usize) -> ParseResult<Node<Stmt>> {
     first_success!(
-        recognizer(parse_expression)
-            .then(recognize_token(TokenType::Semicolon))
-            .map(|(e, semi)| Stmt::expr(e.src + semi.src, e)),
         recognize_token(TokenType::Print)
             .then(recognizer(parse_expression))
             .then(recognize_token(TokenType::Semicolon))
@@ -276,6 +273,9 @@ fn parse_statement(parser: &mut Parser, t: usize) -> ParseResult<Node<Stmt>> {
             .then(recognizer(parse_declarations).map(|(src, decls)| Stmt::block(src, decls)))
             .then(recognize_token(TokenType::RightBrace))
             .map(|((l, b), r)| b.with_src(l.src + r.src)),
+        recognizer(parse_expression)
+            .then(recognize_token(TokenType::Semicolon))
+            .map(|(e, semi)| Stmt::expr(e.src + semi.src, e)),
     )
     .recognize(parser, t)
 }
@@ -311,37 +311,27 @@ fn parse_program(parser: &mut Parser, t: usize) -> ParseResult<Node<Program>> {
         .recognize(parser, t)
 }
 
-pub fn parse(program: &str) -> MultiResult<Node<Program>> {
-    let tokens = scan(program)?;
+pub fn parse(program: &str) -> Result<Node<Program>> {
+    let tokens = scan(program);
     let mut parser = Parser {
         tokens: &tokens[..],
         program,
-        errors: Errors::new("parser"),
     };
     let (t, result) = match parse_program(&mut parser, 0) {
         Success(t, v) => (t, v),
         Failure => {
-            parser
-                .errors
-                .add(Error::syntax("unrecgonized program", Src::default()));
-            return Err(parser.errors);
+            return Err(Error::syntax("unrecgonized program", Src::default()));
         }
         ParseResult::Error(e) => {
-            parser
-                .errors
-                .add(Error::syntax(format!("error: {}", e), Src::default()));
-            return Err(parser.errors);
+            return Err(Error::syntax(format!("error: {}", e), Src::default()));
         }
     };
     if t < parser.tokens.len() {
         let tok = &tokens[t];
-        parser.errors.add(Error::syntax(
+        return Err(Error::syntax(
             format!("Unexpected token after program: {:?}", tok.ty),
             tok.src,
         ));
-    }
-    if !parser.errors.is_empty() {
-        return Err(parser.errors);
     }
     Ok(result)
 }
@@ -349,7 +339,7 @@ pub fn parse(program: &str) -> MultiResult<Node<Program>> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::src::Src;
+    use crate::src::{src, Src};
 
     /// Shortcut to create a Src.
     fn s(offset: usize, len: usize) -> Src {
@@ -370,39 +360,54 @@ mod test {
         Program::new(src, vec![decl])
     }
 
+    fn expect_error_msg(program: &str, error: Error) -> Result<()> {
+        match parse(program) {
+            Ok(prog) => Err(Error::Other(format!("Expected error, got {:?}", prog))),
+            Err(e) => Ok(assert_eq!(e, error)),
+        }
+    }
+
     #[test]
-    fn ident() -> MultiResult<()> {
+    fn ident() -> Result<()> {
         assert_eq!(parse("abc;")?, prog(Expr::variable(s(0, 3), "abc")));
         Ok(())
     }
 
     #[test]
-    fn unconsumed_tokens() -> MultiResult<()> {
+    fn unconsumed_tokens() -> Result<()> {
         assert!(parse("abc def").is_err());
         Ok(())
     }
 
     #[test]
-    fn string() -> MultiResult<()> {
+    fn string() -> Result<()> {
         assert_eq!(parse("\"abc\"; ")?, prog(Expr::string(s(0, 5), "abc")));
         Ok(())
     }
 
     #[test]
-    fn number() -> MultiResult<()> {
+    fn number() -> Result<()> {
         assert_eq!(parse(" 1.3;")?, prog(Expr::number(s(1, 3), "1.3")));
         Ok(())
     }
 
     #[test]
-    fn bool() -> MultiResult<()> {
+    fn bool() -> Result<()> {
         assert_eq!(parse(" true;")?, prog(Expr::boolean(s(1, 4), true)));
         assert_eq!(parse(" false;")?, prog(Expr::boolean(s(1, 5), false)));
         Ok(())
     }
 
     #[test]
-    fn not() -> MultiResult<()> {
+    fn err_bare_unary() -> Result<()> {
+        expect_error_msg(
+            "-",
+            Error::syntax("Unexpected token after program: Minus", src(0, 1)),
+        )
+    }
+
+    #[test]
+    fn not() -> Result<()> {
         assert_eq!(
             parse("!false;")?,
             prog(Expr::unary(
@@ -415,7 +420,7 @@ mod test {
     }
 
     #[test]
-    fn neg() -> MultiResult<()> {
+    fn neg() -> Result<()> {
         assert_eq!(
             parse("-5;")?,
             prog(Expr::unary(
@@ -428,7 +433,7 @@ mod test {
     }
 
     #[test]
-    fn double_not() -> MultiResult<()> {
+    fn double_not() -> Result<()> {
         assert_eq!(
             parse("!!false;")?,
             prog(Expr::unary(
@@ -441,13 +446,13 @@ mod test {
     }
 
     #[test]
-    fn nil() -> MultiResult<()> {
+    fn nil() -> Result<()> {
         assert_eq!(parse("nil;")?, prog(Expr::nil(s(0, 3))));
         Ok(())
     }
 
     #[test]
-    fn mul() -> MultiResult<()> {
+    fn mul() -> Result<()> {
         assert_eq!(
             parse("1 *2;")?,
             prog(Expr::binop(
@@ -461,7 +466,7 @@ mod test {
     }
 
     #[test]
-    fn sub() -> MultiResult<()> {
+    fn sub() -> Result<()> {
         assert_eq!(
             parse("1 -2;")?,
             prog(Expr::binop(
@@ -475,7 +480,7 @@ mod test {
     }
 
     #[test]
-    fn unnecessary_parens() -> MultiResult<()> {
+    fn unnecessary_parens() -> Result<()> {
         assert_eq!(
             parse("(1 *2);")?,
             Program::new(
@@ -498,7 +503,7 @@ mod test {
     }
 
     #[test]
-    fn parens() -> MultiResult<()> {
+    fn parens() -> Result<()> {
         assert_eq!(
             parse("3*(1 +2);")?,
             prog(Expr::binop(
@@ -517,7 +522,7 @@ mod test {
     }
 
     #[test]
-    fn logical_and() -> MultiResult<()> {
+    fn logical_and() -> Result<()> {
         assert_eq!(
             parse("true and false;")?,
             prog(Expr::logop(
@@ -531,7 +536,7 @@ mod test {
     }
 
     #[test]
-    fn logical_or() -> MultiResult<()> {
+    fn logical_or() -> Result<()> {
         assert_eq!(
             parse("true or false;")?,
             prog(Expr::logop(
@@ -545,7 +550,7 @@ mod test {
     }
 
     #[test]
-    fn parens_nested() -> MultiResult<()> {
+    fn parens_nested() -> Result<()> {
         assert_eq!(
             parse("3*((1+2)+5);")?,
             Program::new(
@@ -578,7 +583,7 @@ mod test {
     }
 
     #[test]
-    fn precedence() -> MultiResult<()> {
+    fn precedence() -> Result<()> {
         assert_eq!(
             parse("1*2+3<4==5;")?,
             prog(Expr::binop(
@@ -607,7 +612,7 @@ mod test {
     }
 
     #[test]
-    fn var_decl() -> MultiResult<()> {
+    fn var_decl() -> Result<()> {
         assert_eq!(
             parse("var x = 4;")?,
             Program::new(
@@ -623,7 +628,7 @@ mod test {
     }
 
     #[test]
-    fn r#while() -> MultiResult<()> {
+    fn r#while() -> Result<()> {
         assert_eq!(
             parse("while (true) { false; }")?,
             Program::new(
@@ -648,7 +653,7 @@ mod test {
     }
 
     #[test]
-    fn r#for() -> MultiResult<()> {
+    fn r#for() -> Result<()> {
         assert_eq!(
             parse("for (a; b; c) { false; }")?,
             Program::new(
@@ -681,7 +686,7 @@ mod test {
     }
 
     #[test]
-    fn for_empty() -> MultiResult<()> {
+    fn for_empty() -> Result<()> {
         assert_eq!(
             parse("for ( ;  ;  ) { false; }")?,
             Program::new(
@@ -708,7 +713,7 @@ mod test {
     }
 
     #[test]
-    fn for_decl() -> MultiResult<()> {
+    fn for_decl() -> Result<()> {
         assert_eq!(
             parse("for (var i = 0;;) { }")?,
             Program::new(
@@ -731,7 +736,7 @@ mod test {
     }
 
     #[test]
-    fn var_decl_nil() -> MultiResult<()> {
+    fn var_decl_nil() -> Result<()> {
         assert_eq!(
             parse("var x;")?,
             Program::new(s(0, 6), vec![Declaration::vardecl(s(0, 6), "x", None,)])
@@ -740,7 +745,7 @@ mod test {
     }
 
     #[test]
-    fn block() -> MultiResult<()> {
+    fn block() -> Result<()> {
         assert_eq!(
             parse("1; {2; 3;} 4;")?,
             Program::new(
@@ -771,7 +776,7 @@ mod test {
     }
 
     #[test]
-    fn program() -> MultiResult<()> {
+    fn program() -> Result<()> {
         assert_eq!(
             parse("3; var y = 1; print 4;")?,
             Program::new(
@@ -785,13 +790,13 @@ mod test {
         );
         Ok(())
     }
+
     #[test]
     fn recognize_token_match() {
         let program = "()";
         let mut parser = Parser {
             program,
-            tokens: &scan(program).unwrap(),
-            errors: Errors::new("test"),
+            tokens: &scan(program),
         };
         assert_eq!(
             recognize_token(TokenType::LeftParen).recognize(&mut parser, 0),
@@ -808,8 +813,7 @@ mod test {
         let program = "()";
         let mut parser = Parser {
             program,
-            tokens: &scan(program).unwrap(),
-            errors: Errors::new("test"),
+            tokens: &scan(program),
         };
         assert_eq!(
             recognize_token(TokenType::RightParen).recognize(&mut parser, 2),
@@ -822,8 +826,7 @@ mod test {
         let program = "1 () 2";
         let mut parser = Parser {
             program,
-            tokens: &scan(program).unwrap(),
-            errors: Errors::new("test"),
+            tokens: &scan(program),
         };
         assert_eq!(
             recognize_token(TokenType::LeftParen)
@@ -844,8 +847,7 @@ mod test {
         let program = "false";
         let mut parser = Parser {
             program,
-            tokens: &scan(program).unwrap(),
-            errors: Errors::new("test"),
+            tokens: &scan(program),
         };
         assert_eq!(
             recognize_token(TokenType::True)
@@ -860,8 +862,7 @@ mod test {
         let program = "abc";
         let mut parser = Parser {
             program,
-            tokens: &scan(program).unwrap(),
-            errors: Errors::new("test"),
+            tokens: &scan(program),
         };
         assert_eq!(
             recognize_token(TokenType::Identifier)
@@ -874,8 +875,7 @@ mod test {
     fn test_parse_expression(program: &str, t: usize, exp: ParseResult<Node<Expr>>) {
         let mut parser = Parser {
             program,
-            tokens: &scan(program).unwrap(),
-            errors: Errors::new("test"),
+            tokens: &scan(program),
         };
         assert_eq!(parse_expression(&mut parser, t), exp);
     }

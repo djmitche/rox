@@ -5,6 +5,10 @@ pub struct Src {
     pub len: usize,
 }
 
+pub fn src(offset: usize, len: usize) -> Src {
+    Src { offset, len }
+}
+
 impl std::ops::Add for Src {
     type Output = Self;
 

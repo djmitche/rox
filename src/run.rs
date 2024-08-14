@@ -1,21 +1,20 @@
-use crate::error::{Errors, MultiResult};
+use crate::compiler::desugar;
+use crate::error::Result;
 use crate::interpreter::Interpreter;
 use crate::parser::parse;
-use crate::compiler::desugar;
 use std::fs;
 use std::io::{self, BufRead};
 
 /// Run the given data as a rox program.
-fn run(program: impl AsRef<str>) -> MultiResult<()> {
+fn run(program: impl AsRef<str>) -> Result<()> {
     let parsed = parse(program.as_ref())?;
     let mut desugared = desugar(&parsed).unwrap();
-    desugared.traverse(&mut Interpreter::new())
-        .map_err(|e| Errors::from_error("interpreter", e))?;
+    desugared.traverse(&mut Interpreter::new())?;
     Ok(())
 }
 
 /// Run a REPL until EOF.
-pub fn repl() -> MultiResult<()> {
+pub fn repl() -> Result<()> {
     let stdin = io::stdin();
     let mut lines = stdin.lock().lines();
 

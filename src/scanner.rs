@@ -1,12 +1,10 @@
-use crate::error::{Error, Errors, MultiResult};
 use crate::src::Src;
-use crate::token::{Token, TokenType, Tokens};
+use crate::token::{ScannerError, Token, TokenType, Tokens};
 
 struct Scanner<'p> {
     program: &'p str,
     offset: usize,
     tokens: Tokens,
-    errors: Errors,
 }
 
 impl<'p> Scanner<'p> {
@@ -15,7 +13,6 @@ impl<'p> Scanner<'p> {
             program,
             offset: 0,
             tokens: Vec::new(),
-            errors: Errors::new("scanner"),
         }
     }
 
@@ -59,7 +56,7 @@ impl<'p> Scanner<'p> {
         false
     }
 
-    fn match_number(&mut self) -> MultiResult<()> {
+    fn match_number(&mut self) {
         // TODO: this should probably consider things like `123abc` invalid, but that is now
         // treated as Number(123) Identifier(abc).
         let start_offset = self.offset;
@@ -86,18 +83,19 @@ impl<'p> Scanner<'p> {
             len: end_offset - start_offset,
         };
         if last_was_dot || seen_dots > 1 {
-            self.errors.add(Error::syntax("Invalid number", src));
-            // Synchronize by ignoring the number.
+            self.tokens.push(Token {
+                ty: TokenType::Error(ScannerError::InvalidNumber),
+                src,
+            });
         } else {
             self.tokens.push(Token {
                 ty: TokenType::Number,
                 src,
             });
         }
-        Ok(())
     }
 
-    fn match_string(&mut self) -> MultiResult<()> {
+    fn match_string(&mut self) {
         let start_offset = self.offset;
         let mut terminated = false;
         self.advance(1);
@@ -114,18 +112,19 @@ impl<'p> Scanner<'p> {
             len: end_offset - start_offset,
         };
         if !terminated {
-            self.errors.add(Error::syntax("Unterminated string", src));
-            // Synchronize by ignoring the string.
+            self.tokens.push(Token {
+                ty: TokenType::Error(ScannerError::UnterminatedString),
+                src,
+            });
         } else {
             self.tokens.push(Token {
                 ty: TokenType::String,
                 src,
             });
         }
-        Ok(())
     }
 
-    fn match_identifier(&mut self) -> MultiResult<()> {
+    fn match_identifier(&mut self) {
         let start_offset = self.offset;
         self.advance(1);
         while let Some(c) = self.peek() {
@@ -142,7 +141,6 @@ impl<'p> Scanner<'p> {
                 len: end_offset - start_offset,
             },
         });
-        Ok(())
     }
 
     fn push_token(&mut self, ty: TokenType, len: usize) {
@@ -156,7 +154,7 @@ impl<'p> Scanner<'p> {
         self.offset += len;
     }
 
-    fn scan(mut self) -> MultiResult<Tokens> {
+    fn scan(mut self) -> Tokens {
         use TokenType::*;
         while let Some(c) = self.peek() {
             // Note that some of the guard expressions here (`if ..`) modify `self` in their
@@ -199,31 +197,29 @@ impl<'p> Scanner<'p> {
                 't' if self.match_keyword(True, "true") => {}
                 'v' if self.match_keyword(Var, "var") => {}
                 'w' if self.match_keyword(While, "while") => {}
-                '"' => self.match_string()?,
-                '0'..='9' => self.match_number()?,
-                'a'..='z' | 'A'..='Z' | '_' => self.match_identifier()?,
+                '"' => self.match_string(),
+                '0'..='9' => self.match_number(),
+                'a'..='z' | 'A'..='Z' | '_' => self.match_identifier(),
                 _ => {
                     let c_len = c.len_utf8();
-                    self.errors.add(Error::syntax(
-                        format!("Unreognized input character {c:?}"),
-                        Src {
+                    self.tokens.push(Token {
+                        ty: TokenType::Error(ScannerError::UnrecognizedInput),
+                        src: Src {
                             offset: self.offset,
                             len: c_len,
                         },
-                    ));
+                    });
                     self.advance(c_len);
                 }
             }
         }
-        if !self.errors.is_empty() {
-            return Err(std::mem::take(&mut self.errors));
-        }
-        Ok(self.tokens)
+        self.tokens
     }
 }
 
-/// Scan the given input into a sequence of tokens.
-pub fn scan(program: &str) -> MultiResult<Tokens> {
+/// Scan the given input into a sequence of tokens. This sequence of tokens may contain
+/// an Error variant, to signal scanning errors.
+pub fn scan(program: &str) -> Tokens {
     let scanner = Scanner::new(program);
     scanner.scan()
 }
@@ -240,7 +236,7 @@ mod test {
     /// the first and last tokens are represented as `(Identifier, "a")`, and the assertion would
     /// pass even if both are slices of the first occurrence of `a` in the program.
     fn scan_result(program: &str) -> Vec<(TokenType, &str)> {
-        let tokens = scan(program).unwrap();
+        let tokens = scan(program);
         tokens
             .into_iter()
             .map(|token| (token.ty, token.src_str(program)))
@@ -373,12 +369,22 @@ mod test {
 
     #[test]
     fn invalid_numbers() {
-        assert!(scan("1.").is_err());
-        assert!(scan("12.").is_err());
-        assert!(scan("1.2.3").is_err());
+        assert_eq!(scan_result("1."), vec![(Error(ScannerError::InvalidNumber), "1.")]);
+        assert_eq!(scan_result("12."), vec![(Error(ScannerError::InvalidNumber), "12.")]);
+        assert_eq!(scan_result("1.2.3"), vec![(Error(ScannerError::InvalidNumber), "1.2.3")]);
         // Maybe these should be an error, but let's just tokenize them as we find them.
         assert_eq!(scan_result(".1"), vec![(Dot, "."), (Number, "1")]);
         assert_eq!(scan_result(".12"), vec![(Dot, "."), (Number, "12")]);
+    }
+
+    #[test]
+    fn unterm_string() {
+        assert_eq!(scan_result("\"abc"), vec![(Error(ScannerError::UnterminatedString), "\"abc")]);
+    }
+
+    #[test]
+    fn unrecognized() {
+        assert_eq!(scan_result("%"), vec![(Error(ScannerError::UnrecognizedInput), "%")]);
     }
 
     #[test]
